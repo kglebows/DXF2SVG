@@ -73,6 +73,8 @@ CURRENT_TEXT_FORMAT = 'format_1'  # Ustaw na 'format_1', 'format_2', lub 'format
 # KONFIGURACJA PODSTAWOWA
 # ============================================================================
 STATION_ID = "ZIEB"
+STATION_NUMBER = "01"  # Numer stacji dla formatu structured SVG
+ID_FORMAT = "01-02/03"  # Format ID: 01-MPPT, 02-String, 03-Inverter ALBO 05-06/07 gdzie 05-Station, 06-MPPT, 07-Inverter
 LAYER_LINE = "@IDE_KABLE_DC_B"
 LAYER_TEXT = "@IDE_KABLE_DC_TXT_B"
 SVG_WIDTH = 1600
@@ -266,11 +268,31 @@ def try_parse_format(cleaned_text: str, format_name: str, original_text: str, st
         return None
 
 def get_svg_id(parsed: Dict) -> str:
-    """Generuje SVG ID z sparsowanych danych"""
+    """Generuje SVG ID z sparsowanych danych zgodnie z aktualnym formatem ID"""
     try:
+        # Pobierz aktualny format ID z konfiguracji
+        current_format = ID_FORMAT
+        
+        # Wyciągnij numer MPPT
         mppt = parsed['mppt'].replace("MPPT", "").zfill(2)
+        
+        # Wyciągnij numer stringa
         sub = re.sub(r'[^0-9]', '', parsed['substring'])
-        return f"S{mppt}-{sub}/{parsed['inverter'][1:]}"
+        
+        # Wyciągnij numer falownika (usuń prefiks I)
+        inverter = parsed['inverter'].replace("I", "").zfill(2)
+        
+        if current_format == "01-02/03":
+            # Format: 01-MPPT, 02-String, 03-Inverter
+            return f"{mppt}-{sub.zfill(2)}/{inverter}"
+        elif current_format == "05-06/07":
+            # Format: 05-Station, 06-MPPT, 07-Inverter
+            station_num = STATION_NUMBER.zfill(2)
+            return f"{station_num}-{mppt}/{inverter}"
+        else:
+            # Fallback do starego formatu
+            return f"{mppt}-{sub}/{inverter}"
+            
     except Exception as e:
         logger.error(f"Błąd generowania SVG ID: {e}")
         return "unknown"

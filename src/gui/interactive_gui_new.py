@@ -39,8 +39,8 @@ class InteractiveGUI:
     def __init__(self, config_file=None):
         self.root = tk.Tk()
         self.root.title("DXF2SVG - Interaktywny Edytor")
-        self.root.geometry("1400x800")
-        self.root.minsize(1000, 600)
+        self.root.geometry("1400x900")
+        self.root.minsize(1000, 700)
         
         # Inicjalizuj menedżer konfiguracji
         self.config_manager = ConfigManager()
@@ -531,19 +531,6 @@ class InteractiveGUI:
         status_label = ttk.Label(launch_section, textvariable=self.unassigned_status,
                                style='Error.TLabel', font=('Arial', 9))
         status_label.pack(anchor=tk.W, pady=(5, 0))
-        
-        # Sekcja pomocy
-        help_section = ttk.LabelFrame(interactive_frame, text="ℹ️ Informacje", padding=10)
-        help_section.pack(fill=tk.X, pady=(10, 5), padx=10)
-        
-        help_text = ("Edytor Przypisań jest zawsze dostępny po konwersji DXF.\n"
-                    "Umożliwia poprawienie błędnych przypisań i ręczne przypisanie elementów.\n"
-                    "Można go używać nawet gdy wszystkie teksty są już przypisane.")
-                    
-        help_label = ttk.Label(help_section, text=help_text, 
-                              style='Info.TLabel', font=('Arial', 9), 
-                              wraplength=400, justify=tk.LEFT)
-        help_label.pack(anchor=tk.W)
 
         # Sekcja przypisywania (ukryta domyślnie) - bez scrollowania, od góry
         self.assignment_section = ttk.LabelFrame(interactive_frame, text="Przypisywanie", padding=10)
@@ -593,24 +580,33 @@ class InteractiveGUI:
         selection_frame = ttk.LabelFrame(self.assignment_section, text="Zapamiętane wybory", padding=5)
         selection_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Zapamiętany tekst
+        # Główny kontener dla kolumn
+        columns_frame = ttk.Frame(selection_frame)
+        columns_frame.pack(fill=tk.X)
+        
+        # Lewa kolumna - Teksty
+        text_column = ttk.Frame(columns_frame)
+        text_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        
+        ttk.Label(text_column, text="📝 Wybrany tekst:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
         self.stored_text_info = tk.StringVar(value="❌ Brak wybranego tekstu")
-        ttk.Label(selection_frame, textvariable=self.stored_text_info,
-                 font=('Arial', 9, 'bold'), wraplength=320).pack(anchor=tk.W)
+        ttk.Label(text_column, textvariable=self.stored_text_info,
+                 font=('Arial', 8), wraplength=150).pack(anchor=tk.W, pady=(2, 5))
         
-        # Zapamiętany segment
+        ttk.Button(text_column, text="Wyczyść tekst", 
+                  command=self.clear_selected_text, width=15).pack(anchor=tk.W)
+        
+        # Prawa kolumna - Segmenty  
+        segment_column = ttk.Frame(columns_frame)
+        segment_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        
+        ttk.Label(segment_column, text="🔗 Wybrany segment:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
         self.stored_segment_info = tk.StringVar(value="❌ Brak wybranego segmentu")
-        ttk.Label(selection_frame, textvariable=self.stored_segment_info,
-                 font=('Arial', 9, 'bold'), wraplength=320).pack(anchor=tk.W, pady=(5, 0))
+        ttk.Label(segment_column, textvariable=self.stored_segment_info,
+                 font=('Arial', 8), wraplength=150).pack(anchor=tk.W, pady=(2, 5))
         
-        # Przyciski czyszczenia wyborów
-        clear_frame = ttk.Frame(selection_frame)
-        clear_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        ttk.Button(clear_frame, text="Wyczyść tekst", 
-                  command=self.clear_selected_text, width=12).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(clear_frame, text="Wyczyść segment", 
-                  command=self.clear_selected_segment, width=12).pack(side=tk.LEFT)
+        ttk.Button(segment_column, text="Wyczyść segment", 
+                  command=self.clear_selected_segment, width=15).pack(anchor=tk.W)
         
         # Sekcja akcji - podzielona na rzędy
         actions_section = ttk.LabelFrame(self.assignment_section, text="Akcje", padding=5)

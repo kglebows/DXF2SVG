@@ -31,6 +31,8 @@ class ConfigManager:
         self.config_data = {
             # Podstawowe ustawienia
             'STATION_ID': config.STATION_ID,
+            'STATION_NUMBER': config.STATION_NUMBER,
+            'ID_FORMAT': config.ID_FORMAT,
             'CURRENT_TEXT_FORMAT': config.CURRENT_TEXT_FORMAT,
             'LAYER_LINE': config.LAYER_LINE,
             'LAYER_TEXT': config.LAYER_TEXT,
@@ -291,6 +293,27 @@ class ConfigTab:
         ttk.Entry(basic_frame, textvariable=self.station_id_var, width=20).grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         row += 1
         
+        # Station Number
+        ttk.Label(basic_frame, text="Numer Stacji:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.station_number_var = tk.StringVar()
+        ttk.Entry(basic_frame, textvariable=self.station_number_var, width=20).grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
+        row += 1
+        
+        # ID Format
+        ttk.Label(basic_frame, text="Format ID:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.id_format_var = tk.StringVar()
+        self.id_format_combo = ttk.Combobox(basic_frame, textvariable=self.id_format_var,
+                                           values=["01-02/03", "05-06/07"],
+                                           state='readonly', width=18)
+        self.id_format_combo.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
+        self.id_format_combo.bind('<<ComboboxSelected>>', self.on_id_format_change)
+        row += 1
+        
+        # Opis formatu ID
+        self.id_format_description_label = ttk.Label(basic_frame, text="", foreground="green", wraplength=400)
+        self.id_format_description_label.grid(row=row, column=0, columnspan=3, sticky=tk.W, padx=5, pady=2)
+        row += 1
+        
         # Format tekstów
         ttk.Label(basic_frame, text="Format tekstów:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
         self.text_format_var = tk.StringVar()
@@ -417,6 +440,8 @@ class ConfigTab:
     def load_current_config(self):
         """Załaduj aktualną konfigurację do interfejsu"""
         self.station_id_var.set(self.config_manager.get('STATION_ID', ''))
+        self.station_number_var.set(self.config_manager.get('STATION_NUMBER', '01'))
+        self.id_format_var.set(self.config_manager.get('ID_FORMAT', '01-02/03'))
         self.text_format_var.set(self.config_manager.get('CURRENT_TEXT_FORMAT', ''))
         self.layer_line_var.set(self.config_manager.get('LAYER_LINE', ''))
         self.layer_text_var.set(self.config_manager.get('LAYER_TEXT', ''))
@@ -431,8 +456,9 @@ class ConfigTab:
         self.default_dxf_var.set(self.config_manager.get('DEFAULT_DXF_FILE', 'input.dxf'))
         self.structured_svg_var.set(self.config_manager.get('STRUCTURED_SVG_OUTPUT', 'output_structured.svg'))
         
-        # Aktualizuj opis formatu
+        # Aktualizuj opisy formatów
         self.on_text_format_change()
+        self.on_id_format_change()
     
     def on_text_format_change(self, event=None):
         """Aktualizuj opis formatu tekstów"""
@@ -441,6 +467,17 @@ class ConfigTab:
         if format_key in formats:
             description = formats[format_key]['description']
             self.format_description_label.config(text=f"Opis: {description}")
+    
+    def on_id_format_change(self, event=None):
+        """Aktualizuj opis formatu ID"""
+        format_id = self.id_format_var.get()
+        if format_id == "01-02/03":
+            description = "Format: 01-MPPT, 02-String, 03-Inverter (np. 01-01/02)"
+        elif format_id == "05-06/07":
+            description = "Format: 05-Station, 06-MPPT, 07-Inverter (np. 01-01/02)"
+        else:
+            description = ""
+        self.id_format_description_label.config(text=description)
     
     def on_config_select(self, event):
         """Obsłuż wybór konfiguracji z listy"""
@@ -487,6 +524,8 @@ class ConfigTab:
         """Zapisz aktualne wartości z interfejsu do config_manager"""
         try:
             self.config_manager.set('STATION_ID', self.station_id_var.get())
+            self.config_manager.set('STATION_NUMBER', self.station_number_var.get())
+            self.config_manager.set('ID_FORMAT', self.id_format_var.get())
             self.config_manager.set('CURRENT_TEXT_FORMAT', self.text_format_var.get())
             self.config_manager.set('LAYER_LINE', self.layer_line_var.get())
             self.config_manager.set('LAYER_TEXT', self.layer_text_var.get())
