@@ -623,7 +623,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
         
         for str_id, segments, structural_id in string_data_list:
             # Rysuj każdy segment stringa z optymalną szerokością
-            for seg_idx, seg in enumerate(segments):
+            for seg in segments:
                 x1, y1 = seg['start']
                 x2, y2 = seg['end']
                 y_val = min(y1, y2)
@@ -638,10 +638,8 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                     actual_width = segment_width
                     x_start = min(x1, x2)
                 
-                # Utworz unikalny ID dla segmentu
-                unique_segment_id = f"{structural_id}_seg{seg_idx}"
-                
                 # Utworz prostokąt reprezentujący segment - wysokość używa MPTT_HEIGHT
+                # ID pozostaje czyste bez dodawania _seg0 itp.
                 segment_height = config.MPTT_HEIGHT * scale_factor  # Użyj konfigurowalnej wysokości
                 inv_group.add(dwg.rect(
                     insert=(scale_x(x_start), scale_y(y_val) - segment_height/2),
@@ -649,7 +647,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                     fill=config.ASSIGNED_SEGMENT_COLOR,
                     stroke="black",
                     stroke_width=0.1 * scale_factor,
-                    id=unique_segment_id
+                    id=structural_id
                 ))
             strings_drawn += 1
         dwg.add(inv_group)
