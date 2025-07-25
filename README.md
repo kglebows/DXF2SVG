@@ -5,15 +5,17 @@ A professional Python application for converting DXF (AutoCAD) files to SVG form
 ## ✨ Features
 
 - **🔧 DXF to SVG Conversion**: Convert CAD files to modern vector format
-- **🖥️ Interactive GUI**: User-friendly interface with live preview
+- **🖥️ Interactive GUI**: User-friendly tabbed interface with live preview
 - **🤖 Smart Assignment**: Intelligent text-to-geometry linking based on proximity
-- **⚙️ Configurable Parameters**: Full control over conversion settings (line thickness, station ID, layer names)
+- **⚙️ Advanced Configuration**: Full control over conversion settings with multiple format options
 - **📊 Multiple Output Formats**: 
   - Basic SVG (simple lines)
-  - Interactive SVG (with clickable elements) 
-  - Structured SVG (with rectangles and grouping)
-- **🔍 Manual Editor**: Precise control over element assignments
+  - Interactive SVG (with clickable elements and numbering) 
+  - Structured SVG (with rectangles, grouping, and configurable ID formats)
+- **🔍 Manual Assignment Editor**: Precise control over text-to-segment assignments
 - **📋 Configuration Management**: Save/load different project configurations
+- **🎯 Duplicate Detection**: Automatic removal of overlapping segments in structured output
+- **📐 Flexible ID Formats**: Choose between different structured SVG ID patterns
 
 ## 🚀 Quick Start
 
@@ -49,11 +51,15 @@ python start_gui.py
 1. **Go to Configuration Tab** in the GUI
 2. **Configure the following settings**:
    - **Station ID**: Enter your station identifier (e.g., "G3", "A1")
+   - **Station Number**: Numeric identifier for multi-station projects (e.g., "05")
+   - **ID Format**: Choose structured SVG ID format:
+     - `01-02/03`: MPPT-String/Inverter (e.g., "01-01/02")
+     - `05-06/07`: Station-MPPT/Inverter (e.g., "05-01/02")
+   - **Text Format**: Configure how string labels should be formatted/parsed
    - **Line Layer Name**: Name of the DXF layer containing lines/polylines (e.g., "STRINGS")
    - **Text Layer Name**: Name of the DXF layer containing text labels (e.g., "STRINGLABELS")
    - **DXF Filename**: Name of your input DXF file (e.g., "myproject.dxf")
    - **SVG Filename**: Desired output SVG filename (e.g., "output.svg")
-   - **Text Format**: Configure how string labels should be formatted/parsed
    - **MPTT Height**: Line thickness in the output SVG (default: 1)
 
 3. **Save Configuration**: Click "Save Config" and give it a name (e.g., "MyProject")
@@ -64,12 +70,15 @@ python start_gui.py
 3. **Click "Load Configuration"** - this will apply all your settings
 4. **Click "Start Conversion"** - the app will process your DXF file
 
-### Step 4: Review and Edit (Optional) 
+### Step 4: Review and Edit (Optional)
 1. **Automatic Assignment**: The system will automatically assign text labels to line segments based on proximity
 2. **Switch to Interactive Mode**: If you need to make manual adjustments
 3. **Use the Assignment Editor**: 
-   - Review unassigned elements
+   - Review unassigned elements in improved column layout
+   - Select texts and segments from organized lists
+   - Store selections for easy assignment
    - Manually assign texts to specific line segments
+   - Clear individual selections with dedicated buttons
    - Undo/redo changes as needed
 4. **Generate Final SVG**: Once satisfied with assignments, generate the final output
 
@@ -106,13 +115,23 @@ DXF2SVG/
 
 The application uses `.cfg` files to store project settings. Each configuration includes:
 
-- **MPTT_HEIGHT**: Line thickness in generated SVG (1-10)
 - **STATION_ID**: Station identifier for text filtering  
+- **STATION_NUMBER**: Numeric station identifier for multi-station projects
+- **ID_FORMAT**: Structured SVG ID format ("01-02/03" or "05-06/07")
+- **CURRENT_TEXT_FORMAT**: Text parsing pattern selection
 - **LAYER_LINE**: DXF layer name containing polylines/strings
 - **LAYER_TEXT**: DXF layer name containing text labels
-- **TEXT_FORMATS**: Supported text parsing patterns
-- **DXF_FILE**: Input DXF filename
-- **SVG_FILE**: Output SVG filename
+- **MPTT_HEIGHT**: Line thickness in generated SVG (1-10)
+- **SVG_WIDTH/HEIGHT**: Output dimensions
+- **SEARCH_RADIUS**: Proximity threshold for automatic assignment
+- **DEFAULT_DXF_FILE**: Input DXF filename
+- **STRUCTURED_SVG_OUTPUT**: Output SVG filename
+
+### New in Latest Version:
+- **Enhanced GUI**: Improved tabbed interface with better organization
+- **Duplicate Removal**: Automatic detection and removal of overlapping segments
+- **Flexible ID Formats**: Choose between different structured SVG naming conventions
+- **Column Layout**: Improved assignment interface with side-by-side text/segment selection
 
 ## 🎯 Supported File Formats
 
