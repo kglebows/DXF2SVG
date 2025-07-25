@@ -565,6 +565,10 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
     console.processing("Analiza strukturalnych ID i grupowanie według falowników")
     structural_groups = {}  # inv_id -> [(str_id, segments, structural_id), ...]
     
+    # Zbiór do śledzenia unikalnych segmentów (deduplikacja)
+    seen_segments = set()
+    duplicates_found = 0
+    
     for inv_id, strings in inverter_data.items():
         for str_id, segments in strings.items():
             # Parsuj tekst żeby uzyskać strukturalne ID
@@ -582,11 +586,30 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                 structural_inv_id = inv_id  # fallback do oryginalnego
                 logger.warning(f"Nie można sparsować tekstu {str_id}, używam oryginalnego ID")
             
-            # Dodaj do odpowiedniej grupy strukturalnej z prefiksem I (Inverter)
-            group_id = f"I{structural_inv_id}"
-            if group_id not in structural_groups:
-                structural_groups[group_id] = []
-            structural_groups[group_id].append((str_id, segments, structural_id))
+            # Filtruj duplikaty segmentów
+            unique_segments = []
+            for seg in segments:
+                # Utwórz unikalny klucz dla segmentu (pozycja start i end)
+                seg_key = (round(seg['start'][0], 3), round(seg['start'][1], 3), 
+                          round(seg['end'][0], 3), round(seg['end'][1], 3))
+                
+                if seg_key not in seen_segments:
+                    seen_segments.add(seg_key)
+                    unique_segments.append(seg)
+                else:
+                    duplicates_found += 1
+                    logger.debug(f"Znaleziono duplikat segmentu: {seg_key} w stringu {str_id}")
+            
+            if unique_segments:  # Tylko dodaj jeśli są unikalne segmenty
+                # Dodaj do odpowiedniej grupy strukturalnej z prefiksem I (Inverter)
+                group_id = f"I{structural_inv_id}"
+                if group_id not in structural_groups:
+                    structural_groups[group_id] = []
+                structural_groups[group_id].append((str_id, unique_segments, structural_id))
+    
+    if duplicates_found > 0:
+        logger.warning(f"Usunięto {duplicates_found} duplikatów segmentów")
+        console.warning(f"Usunięto {duplicates_found} duplikatów segmentów")
     
     logger.info(f"Znaleziono {len(structural_groups)} strukturalnych grup falowników: {list(structural_groups.keys())}")
     
@@ -600,7 +623,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
         
         for str_id, segments, structural_id in string_data_list:
             # Rysuj każdy segment stringa z optymalną szerokością
-            for seg in segments:
+            for seg_idx, seg in enumerate(segments):
                 x1, y1 = seg['start']
                 x2, y2 = seg['end']
                 y_val = min(y1, y2)
@@ -615,6 +638,9 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                     actual_width = segment_width
                     x_start = min(x1, x2)
                 
+                # Utworz unikalny ID dla segmentu
+                unique_segment_id = f"{structural_id}_seg{seg_idx}"
+                
                 # Utworz prostokąt reprezentujący segment - wysokość używa MPTT_HEIGHT
                 segment_height = config.MPTT_HEIGHT * scale_factor  # Użyj konfigurowalnej wysokości
                 inv_group.add(dwg.rect(
@@ -623,7 +649,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                     fill=config.ASSIGNED_SEGMENT_COLOR,
                     stroke="black",
                     stroke_width=0.1 * scale_factor,
-                    id=structural_id
+                    id=unique_segment_id
                 ))
             strings_drawn += 1
         dwg.add(inv_group)
