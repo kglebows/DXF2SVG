@@ -252,9 +252,15 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     console.processing("Generowanie interaktywnego SVG z numeracją")
     logger.info(f"Rozpoczęcie generowania interaktywnego SVG: {output_path}")
     
+    # ZAWSZE generuj SVG, nawet jeśli nie ma nieprzypisanych elementów
     if not inverter_data and not texts and not unassigned_texts and not unassigned_segments:
-        console.error("Brak danych do generowania SVG")
-        logger.warning("Brak danych do generowania SVG.")
+        console.warning("Brak danych - generuję pusty SVG")
+        logger.warning("Brak danych do generowania SVG - tworzę pusty plik.")
+        # Utwórz pusty SVG zamiast wychodzić
+        dwg = svgwrite.Drawing(output_path, size=(f"{config.SVG_WIDTH}px", f"{config.SVG_HEIGHT}px"))
+        dwg.add(dwg.text("Brak danych do wyświetlenia", insert=(50, 50), fill="black", font_size="16px"))
+        dwg.save()
+        logger.info(f"Pusty SVG utworzony: {output_path}")
         return
 
     # Zbierz wszystkie punkty
@@ -286,6 +292,13 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     
     if not all_points:
         console.error("Brak punktów do skalowania")
+        logger.error(f"DEBUG: all_points jest puste. inverter_data keys: {list(inverter_data.keys()) if inverter_data else 'BRAK'}")
+        logger.error(f"DEBUG: texts count: {len(texts)}, unassigned_texts: {len(unassigned_texts)}, unassigned_segments: {len(unassigned_segments)}")
+        # Utwórz pusty SVG zamiast wychodzić
+        dwg = svgwrite.Drawing(output_path, size=(f"{config.SVG_WIDTH}px", f"{config.SVG_HEIGHT}px"))
+        dwg.add(dwg.text("Brak punktów do skalowania", insert=(50, 50), fill="red", font_size="16px"))
+        dwg.save()
+        logger.info(f"Pusty SVG utworzony (brak punktów): {output_path}")
         return
 
     # Usuń outliers przed obliczaniem granic - filtruj odległe elementy
@@ -332,7 +345,8 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     def scale_y(y): return height - (y - min_y + margin)  # Odwrócenie osi Y
     
     # Tworzenie SVG z większymi rozmiarami dla lepszej czytelności
-    dwg = svgwrite.Drawing(output_path, size=(f"{width}px", f"{height}px"))
+    # WAŻNE: Wyłączamy walidację aby móc używać atrybutów data-*
+    dwg = svgwrite.Drawing(output_path, size=(f"{width}px", f"{height}px"), debug=False)
     
     console.info("Rysowanie przypisanych elementów")
     
@@ -357,6 +371,7 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                         all_assigned_segments[segment_id] = seg
     
     # Rysuj każdy segment tylko raz
+    logger.info(f"Rysowanie {len(all_assigned_segments)} przypisanych segmentów")
     for segment_id, seg in all_assigned_segments.items():
         # Zapisz mapowanie segment_id -> numer SVG
         segment_id_to_svg_number[segment_id] = segment_global_index
@@ -364,12 +379,16 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         start = (scale_x(seg['start'][0]), scale_y(seg['start'][1]))
         end = (scale_x(seg['end'][0]), scale_y(seg['end'][1]))
         
-        assigned_group.add(dwg.line(
+        line_element = dwg.line(
             start=start,
             end=end,
             stroke=config.ASSIGNED_SEGMENT_COLOR,
             stroke_width=config.MPTT_HEIGHT
-        ))
+        )
+        # Dodaj atrybuty data-* bezpośrednio do elementu
+        line_element.attribs['data-segment-id'] = str(segment_id)
+        line_element.attribs['data-svg-number'] = str(segment_global_index)
+        assigned_group.add(line_element)
         
         # Dodaj środek segmentu jeśli włączone
         if config.SHOW_SEGMENT_CENTERS:
@@ -456,15 +475,26 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                 assigned_texts_count += 1
     
     console.info(f"Wyrenderowano {assigned_texts_count} przypisanych tekstów")
+    logger.info(f"Narysowano {segment_global_index - 1} przypisanych segmentów")
     
-    # NIEPRZYPISANE SEGMENTY z numeracją globalną - tylko te które nie są już przypisane
+    # NIEPRZYPISANE SEGMENTY z numeracją globalną - RYSUJ WSZYSTKIE, duplikaty na żółto
     unassigned_count = 0
+    skipped_count = 0
     for seg in unassigned_segments:
         segment_id = seg.get('id')
         
-        # Pomijaj segmenty które już są przypisane
-        if segment_id in all_assigned_segments:
-            continue
+        # Sprawdź czy segment jest duplikatem (już przypisany)
+        is_duplicate = segment_id in all_assigned_segments
+        
+        # NIE POMIJAJ - rysuj z innym kolorem
+        if is_duplicate:
+            # Rysuj duplikat na ŻÓŁTO
+            color = "#FFFF00"  # Żółty dla duplikatów
+            skipped_count += 1
+            logger.info(f"Rysowanie duplikatu segmentu #{segment_id} na żółto")
+        else:
+            # Normalny nieprzypisany segment  
+            color = config.UNASSIGNED_SEGMENT_COLOR
             
         # Dodaj do mapy numeracji
         global_segment_number = segment_global_index + unassigned_count
@@ -474,12 +504,16 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         start = (scale_x(seg['start'][0]), scale_y(seg['start'][1]))
         end = (scale_x(seg['end'][0]), scale_y(seg['end'][1]))
         
-        unassigned_segments_group.add(dwg.line(
+        line_element = dwg.line(
             start=start,
             end=end,
-            stroke=config.UNASSIGNED_SEGMENT_COLOR,
+            stroke=color,  # Użyj koloru zależnego od statusu
             stroke_width=config.MPTT_HEIGHT
-        ))
+        )
+        # Dodaj atrybuty data-* bezpośrednio do elementu
+        line_element.attribs['data-segment-id'] = str(segment_id) if segment_id else str(unassigned_count)
+        line_element.attribs['data-svg-number'] = str(global_segment_number)
+        unassigned_segments_group.add(line_element)
         
         # Dodaj numer na środku segmentu - większy i czytelniejszy
         mid_x = (seg['start'][0] + seg['end'][0]) / 2
@@ -503,6 +537,11 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         ))
         
         unassigned_count += 1
+    
+    logger.info(f"Narysowano {unassigned_count} nieprzypisanych segmentów (w tym {skipped_count} duplikatów na żółto)")
+    logger.info(f"SUMA: {segment_global_index - 1} przypisanych + {unassigned_count} nieprzypisanych = {segment_global_index - 1 + unassigned_count} segmentów")
+    logger.info(f"WAŻNE: Duplikaty ({skipped_count}) są teraz rysowane na ŻÓŁTO zamiast pomijane!")
+    
     # NIEPRZYPISANE TEKSTY - z pełnymi nazwami
     console.info(f"Renderowanie {len(unassigned_texts)} nieprzypisanych tekstów")
     unassigned_texts_count = 0

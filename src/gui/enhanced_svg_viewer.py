@@ -571,9 +571,12 @@ class EnhancedSVGViewer:
     # Event handlers
     def on_mouse_wheel(self, event):
         """Handle mouse wheel for zooming"""
-        # Get mouse position for zoom center
-        mouse_x = self.canvas.canvasx(event.x)
-        mouse_y = self.canvas.canvasy(event.y)
+        # Get mouse position in canvas coordinates
+        mouse_x = event.x
+        mouse_y = event.y
+        
+        # Convert to SVG coordinates before zoom
+        svg_x, svg_y = self.inverse_transform_point(mouse_x, mouse_y)
         
         # Determine zoom direction
         if event.delta > 0 or event.num == 4:  # Zoom in
@@ -586,14 +589,12 @@ class EnhancedSVGViewer:
         new_scale = max(0.05, min(new_scale, 20.0))  # Wider zoom range
         
         if new_scale != self.scale:
-            # Zoom towards mouse position
-            old_scale = self.scale
+            # Update scale
             self.scale = new_scale
             
-            # Adjust pan to zoom towards mouse position
-            scale_factor = new_scale / old_scale
-            self.pan_x = mouse_x - (mouse_x - self.pan_x) * scale_factor
-            self.pan_y = mouse_y - (mouse_y - self.pan_y) * scale_factor
+            # Adjust pan to keep the same SVG point under the mouse
+            self.pan_x = mouse_x - svg_x * self.scale
+            self.pan_y = mouse_y - svg_y * self.scale
             
             self.needs_full_render = True
             self.render_svg()
@@ -747,38 +748,69 @@ class EnhancedSVGViewer:
         content_height = content_y2 - content_y1
         
         if content_width <= 0 or content_height <= 0:
-            return
+            # Fallback to original size if bounds are invalid
+            content_width = self.original_size[0]
+            content_height = self.original_size[1]
+            content_x1, content_y1 = 0, 0
         
         # Calculate scale to fit content with padding
-        padding_factor = 0.95  # Leave 5% padding
+        padding_factor = 0.9  # Leave 10% padding
         scale_x = (canvas_width * padding_factor) / content_width
         scale_y = (canvas_height * padding_factor) / content_height
         
         self.scale = min(scale_x, scale_y)
         
-        # Center the content
-        scaled_width = content_width * self.scale
-        scaled_height = content_height * self.scale
+        # Center the content in the canvas
+        # Calculate center of content in SVG coordinates
+        content_center_x = (content_x1 + content_x2) / 2
+        content_center_y = (content_y1 + content_y2) / 2
         
-        self.pan_x = (canvas_width - scaled_width) / 2 - content_x1 * self.scale
-        self.pan_y = (canvas_height - scaled_height) / 2 - content_y1 * self.scale
+        # Pan to center the content
+        self.pan_x = canvas_width / 2 - content_center_x * self.scale
+        self.pan_y = canvas_height / 2 - content_center_y * self.scale
         
         self.needs_full_render = True
         self.render_svg()
     
     def zoom_in(self):
         """Zoom in by fixed factor"""
+        # Zoom towards canvas center
+        canvas_width = self.canvas.winfo_width() or 800
+        canvas_height = self.canvas.winfo_height() or 600
+        center_x = canvas_width / 2
+        center_y = canvas_height / 2
+        
+        # Get SVG point at center
+        svg_x, svg_y = self.inverse_transform_point(center_x, center_y)
+        
+        # Update scale
         new_scale = min(self.scale * 1.5, 20.0)
         if new_scale != self.scale:
             self.scale = new_scale
+            # Adjust pan to keep center point fixed
+            self.pan_x = center_x - svg_x * self.scale
+            self.pan_y = center_y - svg_y * self.scale
             self.needs_full_render = True
             self.render_svg()
     
     def zoom_out(self):
         """Zoom out by fixed factor"""
+        # Zoom towards canvas center
+        canvas_width = self.canvas.winfo_width() or 800
+        canvas_height = self.canvas.winfo_height() or 600
+        center_x = canvas_width / 2
+        center_y = canvas_height / 2
+        
+        # Get SVG point at center
+        svg_x, svg_y = self.inverse_transform_point(center_x, center_y)
+        
+        # Update scale
         new_scale = max(self.scale / 1.5, 0.05)
         if new_scale != self.scale:
             self.scale = new_scale
+            # Adjust pan to keep center point fixed
+            self.pan_x = center_x - svg_x * self.scale
+            self.pan_y = center_y - svg_y * self.scale
             self.needs_full_render = True
             self.render_svg()
     
@@ -875,13 +907,13 @@ class EnhancedSVGViewer:
         self.assignment_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         # Assign button
-        self.assign_btn = ttk.Button(self.assignment_frame, text="📎 Przypisz Tekst do Linii", 
+        self.assign_btn = ttk.Button(self.assignment_frame, text="Przypisz Tekst do Linii", 
                                    command=self.assign_text_to_line,
                                    state='disabled')
         self.assign_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # Clear selection button
-        self.clear_btn = ttk.Button(self.assignment_frame, text="🔄 Wyczyść Wybór", 
+        self.clear_btn = ttk.Button(self.assignment_frame, text="Wyczysc Wybor", 
                                   command=self.clear_assignment_selection)
         self.clear_btn.pack(side=tk.LEFT, padx=(0, 10))
         
@@ -1046,7 +1078,7 @@ class EnhancedSVGViewer:
         
         status = " | ".join(status_parts)
         if len(status_parts) == 2 and "Brak" not in status:
-            status += " | ✅ Gotowe do przypisania!"
+            status += " | Gotowe do przypisania!"
         
         self.selection_label.config(text=status)
     
