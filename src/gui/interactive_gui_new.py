@@ -681,11 +681,14 @@ class InteractiveGUI:
     
     def create_svg_panel(self, parent):
         """Panel podglądu SVG po prawej stronie"""
-        svg_frame = ttk.LabelFrame(parent, text="Podgląd SVG - Enhanced", padding=5)
+        svg_frame = ttk.LabelFrame(parent, text="Podgląd SVG - Enhanced Assignment", padding=5)
         svg_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Enhanced SVG Viewer with element selection callback
-        self.svg_viewer = EnhancedSVGViewer(svg_frame, on_element_select=self.on_svg_element_selected)
+        # Enhanced SVG Viewer with assignment callback
+        self.svg_viewer = EnhancedSVGViewer(svg_frame)
+        
+        # Set assignment callback
+        self.svg_viewer.set_assignment_callback(self.on_svg_assignment_made)
         
         # Also keep simple viewer as backup
         self.simple_svg_viewer = None
@@ -886,42 +889,60 @@ class InteractiveGUI:
         self.update_zoom_display()
         self.log_message("Wymuszono pełne renderowanie")
     
-    def on_svg_element_selected(self, element):
-        """Callback when an SVG element is selected in the viewer"""
+    def on_svg_assignment_made(self, assignment_data):
+        """Callback when assignment is made in SVG viewer"""
         try:
-            element_type = element.element_type
-            content = element.svg_data.get('content', '')
+            text_id = assignment_data.get('text_id', '').strip()
+            text_element = assignment_data.get('text_element')
+            line_element = assignment_data.get('line_element')
             
-            if element_type == 'text':
-                # Find matching text in our data
-                text_id = content.strip()
-                if hasattr(self, 'all_texts'):
-                    for i, text_data in enumerate(self.all_texts):
-                        if text_data.get('id') == text_id:
-                            # Select this text in the interface if interactive mode is active
-                            if hasattr(self, 'texts_listbox'):
-                                sorted_texts = sorted(self.all_texts, key=lambda x: x.get('id', ''))
-                                try:
-                                    sorted_index = sorted_texts.index(text_data)
-                                    self.texts_listbox.selection_clear(0, tk.END)
-                                    self.texts_listbox.selection_set(sorted_index)
-                                    self.texts_listbox.see(sorted_index)
-                                    self.selected_text_index = sorted_index
-                                    self.log_message(f"📝 Wybrano tekst z SVG: {text_id}")
-                                except ValueError:
-                                    pass
-                            break
+            self.log_message(f"🎯 Przypisywanie w SVG: '{text_id}' do linii")
             
-            elif element_type in ['line', 'polyline']:
-                # For lines, we would need to match by coordinates or other attributes
-                # This is more complex and would require additional logic
-                self.log_message(f"🔗 Kliknięto linię w SVG (typ: {element_type})")
+            # Find the text in our data
+            text_data = None
+            for text in self.all_texts:
+                if text.get('id', '').strip() == text_id:
+                    text_data = text
+                    break
             
-            # Log the selection
-            self.log_message(f"🎯 Wybrano element SVG: {element_type} - {content[:30]}...")
+            if not text_data:
+                self.log_error(f"❌ Nie znaleziono tekstu '{text_id}' w danych")
+                return
             
+            # Find an unassigned segment to assign to
+            if not self.unassigned_segments:
+                self.log_error("❌ Brak dostępnych nieprzypisanych segmentów")
+                return
+            
+            # Get the first available unassigned segment
+            segment_data = self.unassigned_segments[0]
+            
+            # Create assignment using AssignmentManager if available
+            if hasattr(self, 'assignment_manager') and self.assignment_manager:
+                result = self.assignment_manager.assign_text_to_segment(text_id, segment_data.get('id'))
+                if result['success']:
+                    # Update local data
+                    self.assigned_data = self.assignment_manager.current_assigned_data
+                    self.unassigned_texts = self.assignment_manager.unassigned_texts
+                    self.unassigned_segments = self.assignment_manager.unassigned_segments
+                    
+                    self.log_success(f"✅ Przypisano '{text_id}' do segmentu #{segment_data.get('id')}")
+                    
+                    # Regenerate and refresh SVG view
+                    self.regenerate_and_refresh_svg()
+                    
+                    # Update interactive mode lists if active
+                    if hasattr(self, 'texts_listbox'):
+                        self.populate_texts_list()
+                        self.populate_segments_list()
+                        
+                else:
+                    self.log_error(f"❌ Błąd przypisania: {result.get('message', 'Nieznany błąd')}")
+            else:
+                self.log_error("❌ AssignmentManager nie jest dostępny")
+                
         except Exception as e:
-            self.log_message(f"❌ Błąd obsługi wyboru elementu SVG: {e}", "ERROR")
+            self.log_error(f"❌ Błąd podczas przypisywania w SVG: {e}")
     
     def update_zoom_display(self):
         """Aktualizacja wyświetlania zoomu"""

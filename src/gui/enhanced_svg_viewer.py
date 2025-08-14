@@ -78,7 +78,10 @@ class EnhancedSVGViewer:
         # Assignment state
         self.selected_text_element = None
         self.selected_line_element = None
-        self.assignment_mode = False
+        self.assignment_mode = True  # Start in assignment mode
+        
+        # Assignment callback
+        self.on_assignment_made = None
         
         self.setup_ui()
         
@@ -596,17 +599,18 @@ class EnhancedSVGViewer:
             self.render_svg()
     
     def on_mouse_press(self, event):
-        """Handle mouse press"""
+        """Handle mouse press for assignment mode"""
         self.last_click_pos = (event.x, event.y)
         self.is_dragging = False
         
         # Check for element selection
-        clicked_item = self.canvas.find_closest(event.x, event.y)[0]
-        if clicked_item in self.interactive_elements:
-            self.select_element(self.interactive_elements[clicked_item])
+        clicked_items = self.canvas.find_closest(event.x, event.y)
+        if clicked_items and clicked_items[0] in self.interactive_elements:
+            element = self.interactive_elements[clicked_items[0]]
+            self.handle_element_click(element)
         else:
-            # Click on empty space - clear selection
-            self.clear_selection()
+            # Click on empty space - clear assignment selection
+            self.clear_assignment_selection()
     
     def on_mouse_drag(self, event):
         """Handle mouse drag for panning"""
@@ -861,60 +865,55 @@ class EnhancedSVGViewer:
         self.refresh()
     
     def create_assignment_controls(self, toolbar):
-        """Create assignment controls in the toolbar"""
+        """Create simplified assignment controls"""
         # Separator
         separator = ttk.Separator(toolbar, orient=tk.VERTICAL)
         separator.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 10))
-        
-        # Assignment mode toggle
-        self.assignment_var = tk.BooleanVar()
-        assignment_check = ttk.Checkbutton(toolbar, text="Assignment Mode", 
-                                         variable=self.assignment_var,
-                                         command=self.toggle_assignment_mode)
-        assignment_check.pack(side=tk.LEFT, padx=(0, 10))
         
         # Assignment buttons frame
         self.assignment_frame = ttk.Frame(toolbar)
         self.assignment_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         # Assign button
-        self.assign_btn = ttk.Button(self.assignment_frame, text="📎 Assign", 
+        self.assign_btn = ttk.Button(self.assignment_frame, text="📎 Przypisz Tekst do Linii", 
                                    command=self.assign_text_to_line,
                                    state='disabled')
-        self.assign_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.assign_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # Clear selection button
-        self.clear_btn = ttk.Button(self.assignment_frame, text="🗑️ Delete", 
-                                  command=self.delete_selected_elements,
-                                  state='disabled')
-        self.clear_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.clear_btn = ttk.Button(self.assignment_frame, text="🔄 Wyczyść Wybór", 
+                                  command=self.clear_assignment_selection)
+        self.clear_btn.pack(side=tk.LEFT, padx=(0, 10))
         
-        # Multi-select info
-        self.multi_select_label = ttk.Label(self.assignment_frame, 
-                                          text="Ctrl+Click: Multi-select | Shift+Drag: Box select")
-        self.multi_select_label.pack(side=tk.LEFT, padx=(10, 0))
+        # Instructions
+        self.instruction_label = ttk.Label(self.assignment_frame, 
+                                          text="Kliknij tekst, potem linię, naciśnij 'Przypisz'",
+                                          font=('Arial', 9, 'italic'))
+        self.instruction_label.pack(side=tk.LEFT, padx=(10, 0))
     
-    def toggle_assignment_mode(self):
-        """Toggle assignment mode on/off"""
-        self.assignment_mode = self.assignment_var.get()
-        if self.assignment_mode:
-            self.canvas.config(cursor="crosshair")
-            self.selection_label.config(text="Assignment Mode: Select text, then line")
-        else:
-            self.canvas.config(cursor="")
+    def set_assignment_callback(self, callback):
+        """Set callback function for assignment events"""
+        self.on_assignment_made = callback
+    
+    def clear_assignment_selection(self):
+        """Clear current assignment selection"""
+        if self.selected_text_element:
+            self.set_element_style(self.selected_text_element, 'normal')
             self.selected_text_element = None
+        
+        if self.selected_line_element:
+            self.set_element_style(self.selected_line_element, 'normal')
             self.selected_line_element = None
-            self.update_assignment_buttons()
-            self.selection_label.config(text="Assignment Mode disabled")
+        
+        self.update_assignment_buttons()
+        self.update_assignment_status()
     
     def update_assignment_buttons(self):
         """Update assignment button states"""
-        has_selection = len(self.selected_elements) > 0
         can_assign = (self.selected_text_element is not None and 
                      self.selected_line_element is not None)
         
-        # Enable/disable buttons
-        self.clear_btn.config(state='normal' if has_selection else 'disabled')
+        # Enable/disable assign button
         self.assign_btn.config(state='normal' if can_assign else 'disabled')
     
     def assign_text_to_line(self):
@@ -922,25 +921,27 @@ class EnhancedSVGViewer:
         if not self.selected_text_element or not self.selected_line_element:
             return
         
+        # Extract text and line data
+        text_content = self.selected_text_element.svg_data.get('content', '').strip()
+        text_id = text_content  # Use content as ID
+        
+        # For line, we need to get the segment number from the displayed text
+        line_element = self.selected_line_element
+        
         # Create assignment data
-        assignment = {
+        assignment_data = {
+            'text_id': text_id,
             'text_element': self.selected_text_element,
             'line_element': self.selected_line_element,
             'action': 'assign'
         }
         
-        # Notify callback if available
-        if self.on_element_select:
-            self.on_element_select(assignment)
+        # Notify callback if available (this should update the main GUI)
+        if self.on_assignment_made:
+            self.on_assignment_made(assignment_data)
         
         # Clear assignment selection
-        self.selected_text_element = None
-        self.selected_line_element = None
-        self.update_assignment_buttons()
-        
-        # Visual feedback
-        self.set_element_style(assignment['text_element'], 'normal')
-        self.set_element_style(assignment['line_element'], 'normal')
+        self.clear_assignment_selection()
     
     def delete_selected_elements(self):
         """Delete selected elements"""
@@ -1030,23 +1031,45 @@ class EnhancedSVGViewer:
     
     def update_assignment_status(self):
         """Update assignment status display"""
-        if not self.assignment_mode:
-            return
-        
         status_parts = []
+        
         if self.selected_text_element:
-            text_content = self.selected_text_element.svg_data.get('content', '')[:20]
-            status_parts.append(f"Text: '{text_content}'")
+            text_content = self.selected_text_element.svg_data.get('content', '')[:30]
+            status_parts.append(f"Tekst: '{text_content}'")
         else:
-            status_parts.append("Text: None")
+            status_parts.append("Tekst: Brak")
         
         if self.selected_line_element:
-            status_parts.append("Line: Selected")
+            status_parts.append("Linia: Wybrana")
         else:
-            status_parts.append("Line: None")
+            status_parts.append("Linia: Brak")
         
         status = " | ".join(status_parts)
-        if len(status_parts) == 2 and "None" not in status:
-            status += " | Ready to assign!"
+        if len(status_parts) == 2 and "Brak" not in status:
+            status += " | ✅ Gotowe do przypisania!"
         
         self.selection_label.config(text=status)
+    
+    def handle_element_click(self, element: InteractiveElement):
+        """Handle clicking on an element in assignment mode"""
+        if element.element_type == 'text':
+            # Clear previous text selection
+            if self.selected_text_element:
+                self.set_element_style(self.selected_text_element, 'normal')
+            
+            # Select new text
+            self.selected_text_element = element
+            self.set_element_style(element, 'selected')
+            
+        elif element.element_type in ['line', 'polyline', 'rect']:  # rect for segments
+            # Clear previous line selection
+            if self.selected_line_element:
+                self.set_element_style(self.selected_line_element, 'normal')
+            
+            # Select new line
+            self.selected_line_element = element
+            self.set_element_style(element, 'selected')
+        
+        self.update_assignment_buttons()
+        self.update_assignment_status()
+    
