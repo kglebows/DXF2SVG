@@ -616,11 +616,14 @@ class EnhancedSVGViewer:
     
     def on_mouse_motion(self, event):
         """Handle mouse motion for hover effects"""
-        if self.is_dragging:
+        if not self.interactive_elements:
             return
         
-        # Find element under cursor
-        item = self.canvas.find_closest(event.x, event.y)[0]
+        # Get item under cursor - handle empty canvas
+        closest = self.canvas.find_closest(event.x, event.y)
+        if not closest:
+            return
+        item = closest[0]
         
         if item in self.interactive_elements:
             elem = self.interactive_elements[item]
@@ -653,8 +656,8 @@ class EnhancedSVGViewer:
     
     def on_canvas_configure(self, event):
         """Handle canvas resize"""
-        # Trigger re-render after resize
-        self.root.after_idle(self.render_svg)
+        if hasattr(self, 'parent'):
+            self.parent.after_idle(self.render_svg)
     
     # Selection and interaction
     def select_element(self, element: InteractiveElement):
@@ -711,7 +714,7 @@ class EnhancedSVGViewer:
         canvas_height = self.canvas.winfo_height() or 600
         
         if canvas_width <= 1 or canvas_height <= 1:
-            self.root.after(100, self.fit_to_window)
+            self.parent.after(100, self.fit_to_window)
             return
         
         # Use actual content bounds instead of SVG dimensions
