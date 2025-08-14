@@ -560,7 +560,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
         logger.warning("Brak danych do generowania strukturalnego SVG.")
         return
 
-    # Zbierz wszystkie punkty z przypisanych segmentów
+    # Zbierz wszystkie punkty z przypisanych segmentów - TYLKO PRZYPISANE!
     all_points = []
     for inverter in inverter_data.values():
         for segments in inverter.values():
@@ -568,10 +568,7 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                 all_points.append(seg['start'])
                 all_points.append(seg['end'])
     
-    if unassigned_segments:
-        for seg in unassigned_segments:
-            all_points.append(seg['start'])
-            all_points.append(seg['end'])
+    # STRUCTURED SVG - nie uwzględniamy nieprzypisanych segmentów
     
     if not all_points:
         console.error("Brak punktów do skalowania")
@@ -739,35 +736,8 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
     
     console.success("Strukturalnych stringów narysowanych", strings_drawn)
 
-    # Rysowanie nieprzypisanych segmentów (jeśli są)
-    if unassigned_segments:
-        console.processing("Rysowanie nieprzypisanych segmentów")
-        unassigned_group = dwg.g(id="unassigned_segments")
-        for i, seg in enumerate(unassigned_segments):
-            x1, y1 = seg['start']
-            x2, y2 = seg['end']
-            y_val = min(y1, y2)
-            
-            segment_width = abs(x2 - x1)
-            if segment_width > 2:
-                gap = segment_width * 0.01
-                actual_width = segment_width - gap
-                x_start = min(x1, x2) + gap/2
-            else:
-                actual_width = segment_width
-                x_start = min(x1, x2)
-            
-            segment_height = config.MPTT_HEIGHT * scale_factor  # Użyj konfigurowalnej wysokości
-            unassigned_group.add(dwg.rect(
-                insert=(scale_x(x_start), scale_y(y_val) - segment_height/2),
-                size=(actual_width * scale_factor, segment_height),
-                fill=config.UNASSIGNED_SEGMENT_COLOR,
-                stroke="black",
-                stroke_width=0.1 * scale_factor,
-                id=f"unassigned_{i}"
-            ))
-        dwg.add(unassigned_group)
-        console.info("Nieprzypisanych segmentów narysowanych", len(unassigned_segments))
+    # STRUCTURED SVG - nie rysujemy nieprzypisanych segmentów!
+    # Finalny SVG zawiera tylko w pełni skonfigurowane struktury
 
     console.processing("Zapisywanie strukturalnego pliku SVG")
     dwg.save()
