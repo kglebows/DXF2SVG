@@ -40,7 +40,15 @@ class InteractiveGUI:
     def __init__(self, config_file=None):
         self.root = tk.Tk()
         self.root.title("DXF2SVG - Interaktywny Edytor")
-        self.root.geometry("1400x900")
+        # Always start fullscreen/zoomed
+        try:
+            if sys.platform.startswith('win'):
+                self.root.state('zoomed')
+            else:
+                self.root.attributes('-fullscreen', True)
+        except Exception:
+            # Fallback geometry if fullscreen not supported
+            self.root.geometry("1400x900")
         self.root.minsize(1000, 700)
         
         # Inicjalizuj menedżer konfiguracji
@@ -353,7 +361,7 @@ class InteractiveGUI:
                     config_params = self.get_dxf_config_params()
                     
                     # Konwertuj DXF - używaj bezpośrednio podanego pliku z parametrami konfiguracji
-                    self.root.after(0, lambda: self.log_message(f"🔄 Przetwarzanie pliku: {dxf_file}"))
+                    self.root.after(0, lambda: self.log_message(f"Przetwarzanie pliku: {dxf_file}"))
                     assigned_data, station_texts, unassigned_texts, unassigned_segments, unassigned_polylines = process_dxf(dxf_file, config_params)
                     
                     # Sprawdź ponownie czy anulowano
@@ -426,12 +434,13 @@ class InteractiveGUI:
             self.log_message("🔄 Automatyczne generowanie interaktywnego SVG...")
             self._auto_generate_interactive_svg()
             
+            # Automatycznie uruchom edytor przypisań
+            self.log_message("🚀 Automatyczne uruchomienie edytora przypisań...")
+            self.start_interactive_mode()
+            
             # Przełącz na tryb interactive assignment
             self.current_display_mode.set("interactive")
             self.change_display_mode()
-            
-            # Przełącz na zakładkę Widok SVG
-            self.notebook.select(1)  # Indeks zakładki Widok SVG
             
         else:
             self.conversion_status_var.set("❌ Błąd konwersji")
@@ -799,6 +808,7 @@ class InteractiveGUI:
     def _auto_generate_interactive_svg(self):
         """Automatyczne generowanie interaktywnego SVG po konwersji"""
         if not self.last_conversion_data:
+            self.log_error("Brak danych konwersji do generowania SVG")
             return
         
         try:
@@ -810,9 +820,37 @@ class InteractiveGUI:
             unassigned_texts = self.last_conversion_data.get('unassigned_texts', [])
             unassigned_segments = self.last_conversion_data.get('unassigned_segments', [])
             
+            # Debug - sprawdź co mamy
+            self.log_message(f"🔍 DEBUG: assigned_data keys: {list(assigned_data.keys()) if assigned_data else 'BRAK'}")
+            self.log_message(f"🔍 DEBUG: station_texts: {len(station_texts)} elementów")
+            self.log_message(f"🔍 DEBUG: unassigned_texts: {len(unassigned_texts)} elementów")
+            self.log_message(f"🔍 DEBUG: unassigned_segments: {len(unassigned_segments)} elementów")
+            
+            # Sprawdź czy są jakieś dane do renderowania
+            total_segments = 0
+            if assigned_data:
+                for inv_segments in assigned_data.values():
+                    for segments in inv_segments.values():
+                        if isinstance(segments, list):
+                            total_segments += len(segments)
+            total_segments += len(unassigned_segments)
+            
+            if total_segments == 0 and len(station_texts) == 0 and len(unassigned_texts) == 0:
+                self.log_error("Brak danych do wygenerowania SVG - wszystkie listy są puste!")
+                return
+            
             # Pobierz konfigurację dla station_id
             config_params = self.get_dxf_config_params()
-            station_id = config_params.get('station_id')
+            station_id = config_params.get('STATION_ID')
+            
+            self.log_message(f"🔧 Generuję SVG dla stacji: {station_id}")
+            self.log_message(f"🔧 Segmenty do renderowania: {total_segments}")
+            
+            # Usuń stary plik jeśli istnieje
+            output_svg = "interactive_assignment.svg"
+            if os.path.exists(output_svg):
+                os.remove(output_svg)
+                self.log_message(f"🗑️ Usunięto stary plik SVG")
             
             # Wygeneruj SVG
             generate_interactive_svg(
@@ -820,18 +858,45 @@ class InteractiveGUI:
                 station_texts,      # wszystkie teksty stacji
                 unassigned_texts,   # nieprzypisane teksty
                 unassigned_segments, # nieprzypisane segmenty
-                "interactive_assignment.svg",  # plik wyjściowy
+                output_svg,         # plik wyjściowy
                 station_id          # ID stacji
             )
             
-            self.log_message("✅ Automatycznie wygenerowano interaktywny SVG")
+            # Walidacja wygenerowanego pliku SVG
+            try:
+                if not os.path.exists(output_svg):
+                    self.log_error(f"❌ Plik SVG nie został utworzony: {output_svg}")
+                    return
+                    
+                file_size = os.path.getsize(output_svg)
+                if file_size < 100:  # Zwiększony próg
+                    self.log_error(f"❌ Plik SVG jest za mały ({file_size} bajtów): {output_svg}")
+                    # Sprawdź zawartość
+                    with open(output_svg, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    self.log_error(f"Zawartość: {content[:200]}...")
+                    return
+                    
+                with open(output_svg, 'rb') as f:
+                    head = f.read(4096)
+                if b'<svg' not in head.lower():
+                    self.log_error(f"❌ Plik nie zawiera <svg> tag: {output_svg}")
+                    return
+                    
+                self.log_success(f"✅ Wygenerowano interaktywny SVG ({file_size} bajtów)")
+                
+            except Exception as ve:
+                self.log_error(f"Błąd walidacji SVG: {ve}")
+                return
             
             # Jeśli jesteśmy w trybie interactive, odśwież podgląd
             if self.current_display_mode.get() == "interactive":
                 self.refresh_svg()
                 
         except Exception as e:
-            self.log_message(f"❌ Błąd automatycznego generowania SVG: {e}", "ERROR")
+            self.log_error(f"❌ Błąd automatycznego generowania SVG: {e}")
+            import traceback
+            self.log_error(f"Stack trace: {traceback.format_exc()}")
     
     # Metody widoku SVG
     def change_display_mode(self):
@@ -863,10 +928,26 @@ class InteractiveGUI:
         svg_path = self.current_svg_path.get()
         
         if os.path.exists(svg_path):
-            self.svg_viewer.load_svg(svg_path)
-            self.update_svg_info(svg_path)
-            self.update_zoom_display()
-            self.log_message(f"Odświeżono podgląd: {os.path.basename(svg_path)}")
+            try:
+                # Validate file size and ensure it contains an <svg ...> element to avoid parse errors
+                file_size = os.path.getsize(svg_path)
+                if file_size < 20:  # likely header-only or empty
+                    self.svg_info.set("Plik SVG jest pusty lub niekompletny")
+                    self.log_error(f"SVG parse error: plik pusty lub niekompletny: {svg_path}")
+                    return
+                with open(svg_path, 'rb') as f:
+                    head = f.read(4096)
+                if b'<svg' not in head.lower():
+                    self.svg_info.set("Nieprawidłowy SVG (brak znacznika <svg>)")
+                    self.log_error(f"SVG parse error: brak <svg> w pliku: {svg_path}")
+                    return
+                self.svg_viewer.load_svg(svg_path)
+                self.update_svg_info(svg_path)
+                self.update_zoom_display()
+                self.log_message(f"Odświeżono podgląd: {os.path.basename(svg_path)}")
+            except Exception as e:
+                self.svg_info.set("Błąd wczytywania SVG")
+                self.log_error(f"SVG parse/load error dla '{svg_path}': {e}")
         else:
             self.svg_info.set("Brak pliku SVG")
             self.log_message(f"Nie znaleziono pliku SVG: {svg_path}", "WARNING")
@@ -893,56 +974,28 @@ class InteractiveGUI:
         """Callback when assignment is made in SVG viewer"""
         try:
             text_id = assignment_data.get('text_id', '').strip()
-            text_element = assignment_data.get('text_element')
             line_element = assignment_data.get('line_element')
             
-            self.log_message(f"🎯 Przypisywanie w SVG: '{text_id}' do linii")
-            
-            # Find the text in our data
-            text_data = None
-            for text in self.all_texts:
-                if text.get('id', '').strip() == text_id:
-                    text_data = text
-                    break
-            
-            if not text_data:
-                self.log_error(f"❌ Nie znaleziono tekstu '{text_id}' w danych")
-                return
-            
-            # Find an unassigned segment to assign to
-            if not self.unassigned_segments:
-                self.log_error("❌ Brak dostępnych nieprzypisanych segmentów")
-                return
-            
-            # Get the first available unassigned segment
-            segment_data = self.unassigned_segments[0]
-            
-            # Create assignment using AssignmentManager if available
-            if hasattr(self, 'assignment_manager') and self.assignment_manager:
-                result = self.assignment_manager.assign_text_to_segment(text_id, segment_data.get('id'))
-                if result['success']:
-                    # Update local data
-                    self.assigned_data = self.assignment_manager.current_assigned_data
-                    self.unassigned_texts = self.assignment_manager.unassigned_texts
-                    self.unassigned_segments = self.assignment_manager.unassigned_segments
-                    
-                    self.log_success(f"✅ Przypisano '{text_id}' do segmentu #{segment_data.get('id')}")
-                    
-                    # Regenerate and refresh SVG view
-                    self.regenerate_and_refresh_svg()
-                    
-                    # Update interactive mode lists if active
-                    if hasattr(self, 'texts_listbox'):
-                        self.populate_texts_list()
-                        self.populate_segments_list()
-                        
-                else:
-                    self.log_error(f"❌ Błąd przypisania: {result.get('message', 'Nieznany błąd')}")
-            else:
-                self.log_error("❌ AssignmentManager nie jest dostępny")
+            if text_id and line_element:
+                self.log_message(f"SVG Viewer: Wybrano tekst '{text_id}' i linię.")
                 
+                # Znajdź i zaznacz tekst na liście
+                self.select_listbox_item_by_id(self.texts_listbox, self.all_texts, 'id', text_id)
+                self.select_text()
+                
+                # Znajdź i zaznacz linię (segment) na liście
+                line_id = line_element.svg_data['attributes'].get('data-segment-id')
+                if line_id:
+                    self.select_listbox_item_by_id(self.segments_listbox, self.all_segments, 'id', int(line_id))
+                    self.select_segment()
+                    self.log_message(f"SVG Viewer: Znaleziono segment #{line_id} do przypisania.")
+                    # Automatyczne przypisanie
+                    self.assign_text_to_segment()
+                else:
+                    self.log_error("Brak 'data-segment-id' w wybranym elemencie linii.")
+
         except Exception as e:
-            self.log_error(f"❌ Błąd podczas przypisywania w SVG: {e}")
+            self.log_error(f"Błąd podczas przypisywania w SVG: {e}")
     
     def update_zoom_display(self):
         """Aktualizacja wyświetlania zoomu"""
@@ -1347,13 +1400,13 @@ class InteractiveGUI:
         text_id = selected_text.get('id')
         segment_id = selected_segment.get('id')
         
-        self.log_message(f"🎯 Rozpoczynam przypisanie: {text_id} → Segment #{segment_id}")
+        self.log_message(f"Rozpoczynam przypisanie: {text_id} -> Segment #{segment_id}")
         
         # Sprawdź statusy elementów w AssignmentManager
         text_was_unassigned = text_id in {t.get('id') for t in self.assignment_manager.unassigned_texts}
         segment_was_unassigned = segment_id in {s.get('id') for s in self.assignment_manager.unassigned_segments}
         
-        self.log_message(f"📊 Status: Tekst {'🔴' if text_was_unassigned else '🟢'}, Segment {'🔴' if segment_was_unassigned else '🟢'}")
+        self.log_message(f"Status: Tekst {'nieprzypisany' if text_was_unassigned else 'przypisany'}, Segment {'nieprzypisany' if segment_was_unassigned else 'przypisany'}")
         
         # Potwierdź przepisanie jeśli element był już przypisany
         if not text_was_unassigned or not segment_was_unassigned:
@@ -1467,9 +1520,6 @@ class InteractiveGUI:
         self.selected_text_index = None
         self.selected_segment_index = None
 
-    def skip_text(self, text_id=None):
-            messagebox.showinfo("Gratulacje!", "Wszystkie teksty zostały przypisane!")
-            self.log_message("✅ Wszystkie teksty przypisane!")
     
     def regenerate_and_refresh_svg(self):
         """Natychmiastowa regeneracja i odświeżenie SVG po zmianie przypisania"""
@@ -1515,17 +1565,30 @@ class InteractiveGUI:
             
             # Pobierz konfigurację dla station_id
             config_params = self.get_dxf_config_params()
-            station_id = config_params.get('station_id')
+            station_id = config_params.get('STATION_ID')
             
             # Wygeneruj nowy SVG z poprawnymi parametrami
+            output_svg = "interactive_assignment.svg"
             generate_interactive_svg(
                 assigned_data,           # inverter_data: Dict
                 station_texts,          # texts: List (wszystkie teksty stacji)
                 remaining_unassigned_texts,  # unassigned_texts: List
                 remaining_unassigned_segments,  # unassigned_segments: List
-                "interactive_assignment.svg",   # output_path: str
+                output_svg,             # output_path: str
                 station_id              # station_id: str
             )
+            
+            # Walidacja wygenerowanego pliku
+            try:
+                if not os.path.exists(output_svg) or os.path.getsize(output_svg) < 20:
+                    self.log_error(f"Interaktywny SVG nie został wygenerowany poprawnie: {output_svg}")
+                else:
+                    with open(output_svg, 'rb') as f:
+                        head = f.read(4096)
+                    if b'<svg' not in head.lower():
+                        self.log_error(f"Wygenerowany plik nie zawiera <svg>: {output_svg}")
+            except Exception as ve:
+                self.log_error(f"Walidacja SVG nie powiodła się: {ve}")
             
             # Przełącz widok na interactive i odśwież
             self.current_display_mode.set("interactive")
@@ -1880,7 +1943,7 @@ class InteractiveGUI:
             
             # Pobierz konfigurację dla station_id
             config_params = self.get_dxf_config_params()
-            station_id = config_params.get('station_id')
+            station_id = config_params.get('STATION_ID')
             
             generate_structured_svg(
                 current_assigned_data,                        # NAJAKTUALNIEJSZE dane!
@@ -1970,17 +2033,30 @@ class InteractiveGUI:
             
             # Pobierz konfigurację dla station_id
             config_params = self.get_dxf_config_params()
-            station_id = config_params.get('station_id')
+            station_id = config_params.get('STATION_ID')
             
             # Wygeneruj nowy SVG
+            output_svg = "interactive_assignment.svg"
             generate_interactive_svg(
                 assigned_data, 
                 station_texts, 
                 remaining_unassigned_texts, 
                 remaining_unassigned_segments, 
-                "interactive_assignment.svg",
+                output_svg,
                 station_id
             )
+            
+            # Walidacja wygenerowanego pliku
+            try:
+                if not os.path.exists(output_svg) or os.path.getsize(output_svg) < 20:
+                    self.log_error(f"Interaktywny SVG nie został wygenerowany poprawnie: {output_svg}")
+                else:
+                    with open(output_svg, 'rb') as f:
+                        head = f.read(4096)
+                    if b'<svg' not in head.lower():
+                        self.log_error(f"Wygenerowany plik nie zawiera <svg>: {output_svg}")
+            except Exception as ve:
+                self.log_error(f"Walidacja SVG nie powiodła się: {ve}")
             
             # Odśwież widok
             self.refresh_svg()
@@ -2015,6 +2091,40 @@ class InteractiveGUI:
         """Refresh both text and segment lists"""
         self.populate_texts_list()
         self.populate_segments_list()
+    
+    def select_listbox_item_by_id(self, listbox, items_list, id_field, search_value):
+        """Zaznacz element w listbox na podstawie ID"""
+        try:
+            # Posortuj liste tak samo jak przy wypelnianiu
+            if items_list == self.all_texts:
+                sorted_items = sorted(items_list, key=lambda x: x.get(id_field, ''))
+            else:  # segments
+                sorted_items = sorted(items_list, key=lambda x: x.get(id_field, 0))
+            
+            # Znajdz index elementu
+            for idx, item in enumerate(sorted_items):
+                if item.get(id_field) == search_value:
+                    # Wyczysc poprzednie zaznaczenie
+                    listbox.selection_clear(0, tk.END)
+                    # Zaznacz nowy element
+                    listbox.selection_set(idx)
+                    # Przewin do elementu
+                    listbox.see(idx)
+                    
+                    # Ustaw odpowiedni index
+                    if listbox == self.texts_listbox:
+                        self.selected_text_index = idx
+                    else:
+                        self.selected_segment_index = idx
+                    
+                    return True
+            
+            self.log_warning(f"Nie znaleziono elementu o ID: {search_value}")
+            return False
+            
+        except Exception as e:
+            self.log_error(f"Blad zaznaczania elementu: {e}")
+            return False
     
     # Metody pomocnicze
     def log_message(self, message, level="INFO"):
@@ -2069,7 +2179,13 @@ class InteractiveGUI:
     
     def log_error(self, message):
         """Wiadomość błędu"""
-        self.log_message(message, "ERROR")
+        # Usuń emoji jeśli nie mogą być wyświetlone w konsoli Windows
+        try:
+            self.log_message(message, "ERROR")
+        except UnicodeEncodeError:
+            # Usuń wszystkie znaki Unicode które nie są ASCII
+            clean_message = message.encode('ascii', 'ignore').decode('ascii')
+            self.log_message(clean_message, "ERROR")
     
     def load_default_files(self):
         """Ładowanie domyślnych plików"""
@@ -2096,7 +2212,10 @@ class InteractiveGUI:
         except KeyboardInterrupt:
             print("\\n⚠️ Przerwano przez użytkownika")
         except Exception as e:
-            print(f"❌ Błąd GUI: {e}")
+            try:
+                print(f"❌ Błąd GUI: {e}")
+            except UnicodeEncodeError:
+                print(f"[ERROR] Błąd GUI: {e}")
             import traceback
             traceback.print_exc()
 

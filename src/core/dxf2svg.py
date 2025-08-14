@@ -51,6 +51,11 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
     polyline_id = 1
     global_segment_id = 1  # Globalny licznik ID segmentów
     
+    # Statystyki diagnostyczne
+    total_segments_found = 0
+    rejected_not_horizontal = 0
+    rejected_too_short = 0
+    
     mspace = doc.modelspace()
     
     # Pobierz polilinie z odpowiedniej warstwy
@@ -71,11 +76,15 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
             for i in range(len(points) - 1):
                 start = points[i]
                 end = points[i + 1]
+                total_segments_found += 1
+                
+                y_diff = abs(start[1] - end[1])
+                x_diff = abs(start[0] - end[0])
                 
                 # Sprawdź czy segment jest poziomy (różnica Y mniejsza niż tolerancja)
-                if abs(start[1] - end[1]) <= y_tolerance:
+                if y_diff <= y_tolerance:
                     # Upewnij się, że segment ma minimalną szerokość
-                    if abs(start[0] - end[0]) >= segment_min_width:
+                    if x_diff >= segment_min_width:
                         # Określ długość segmentu
                         length = calculate_distance(start, end)
                         
@@ -87,6 +96,13 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
                             'polyline_idx': polyline_id
                         })
                         global_segment_id += 1  # Zwiększ globalny licznik
+                    else:
+                        rejected_too_short += 1
+                        logger.debug(f"Odrzucono segment za krótki: x_diff={x_diff:.4f} < {segment_min_width}")
+                else:
+                    rejected_not_horizontal += 1
+                    if rejected_not_horizontal <= 10:  # Loguj tylko pierwsze 10
+                        logger.debug(f"Odrzucono segment nie-poziomy: y_diff={y_diff:.4f} > {y_tolerance}, x_diff={x_diff:.2f}")
             
             if polyline_segments:  # Tylko jeśli ma poziome segmenty
                 # Oblicz centrum polilini
@@ -115,8 +131,20 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
             
         polyline_id += 1
     
-    console.success("Segmentów poziomych znalezionych", sum(len(p['segments']) for p in polylines))
+    accepted_segments = sum(len(p['segments']) for p in polylines)
+    console.success("Segmentów poziomych znalezionych", accepted_segments)
     console.success("Polilinii z poziomymi segmentami", len(polylines))
+    
+    # Loguj statystyki diagnostyczne
+    logger.info(f"STATYSTYKI EKSTRAKCJI SEGMENTÓW:")
+    logger.info(f"  - Wszystkich segmentów w poliliniach: {total_segments_found}")
+    logger.info(f"  - Zaakceptowanych (poziomych): {accepted_segments}")
+    logger.info(f"  - Odrzuconych (nie-poziomych, y_diff > {y_tolerance}): {rejected_not_horizontal}")
+    logger.info(f"  - Odrzuconych (za krótkich, x_diff < {segment_min_width}): {rejected_too_short}")
+    
+    if rejected_not_horizontal > 0:
+        logger.warning(f"WAŻNE: {rejected_not_horizontal} segmentów odrzuconych jako nie-poziome! Może zwiększyć Y_TOLERANCE?")
+    
     return polylines
 
 def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], station_id: str, search_radius: float = 6.0, text_location: str = "above") -> List[Dict]:
