@@ -27,6 +27,7 @@ try:
     from src.utils.console_logger import logger
     from src.interactive.interactive_editor import get_unassigned_texts, get_unassigned_segments
     from src.gui.simple_svg_viewer import SimpleSVGViewer
+    from src.gui.enhanced_svg_viewer import EnhancedSVGViewer
     from src.interactive.assignment_manager import AssignmentManager
 except ImportError as e:
     print(f"Błąd importu: {e}")
@@ -680,11 +681,14 @@ class InteractiveGUI:
     
     def create_svg_panel(self, parent):
         """Panel podglądu SVG po prawej stronie"""
-        svg_frame = ttk.LabelFrame(parent, text="Podgląd SVG", padding=5)
+        svg_frame = ttk.LabelFrame(parent, text="Podgląd SVG - Enhanced", padding=5)
         svg_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Viewer SVG
-        self.svg_viewer = SimpleSVGViewer(svg_frame)
+        # Enhanced SVG Viewer with element selection callback
+        self.svg_viewer = EnhancedSVGViewer(svg_frame, on_element_select=self.on_svg_element_selected)
+        
+        # Also keep simple viewer as backup
+        self.simple_svg_viewer = None
     
     # Metody obsługi plików
     def select_dxf_file(self):
@@ -881,6 +885,43 @@ class InteractiveGUI:
         self.svg_viewer.force_full_render()
         self.update_zoom_display()
         self.log_message("Wymuszono pełne renderowanie")
+    
+    def on_svg_element_selected(self, element):
+        """Callback when an SVG element is selected in the viewer"""
+        try:
+            element_type = element.element_type
+            content = element.svg_data.get('content', '')
+            
+            if element_type == 'text':
+                # Find matching text in our data
+                text_id = content.strip()
+                if hasattr(self, 'all_texts'):
+                    for i, text_data in enumerate(self.all_texts):
+                        if text_data.get('id') == text_id:
+                            # Select this text in the interface if interactive mode is active
+                            if hasattr(self, 'texts_listbox'):
+                                sorted_texts = sorted(self.all_texts, key=lambda x: x.get('id', ''))
+                                try:
+                                    sorted_index = sorted_texts.index(text_data)
+                                    self.texts_listbox.selection_clear(0, tk.END)
+                                    self.texts_listbox.selection_set(sorted_index)
+                                    self.texts_listbox.see(sorted_index)
+                                    self.selected_text_index = sorted_index
+                                    self.log_message(f"📝 Wybrano tekst z SVG: {text_id}")
+                                except ValueError:
+                                    pass
+                            break
+            
+            elif element_type in ['line', 'polyline']:
+                # For lines, we would need to match by coordinates or other attributes
+                # This is more complex and would require additional logic
+                self.log_message(f"🔗 Kliknięto linię w SVG (typ: {element_type})")
+            
+            # Log the selection
+            self.log_message(f"🎯 Wybrano element SVG: {element_type} - {content[:30]}...")
+            
+        except Exception as e:
+            self.log_message(f"❌ Błąd obsługi wyboru elementu SVG: {e}", "ERROR")
     
     def update_zoom_display(self):
         """Aktualizacja wyświetlania zoomu"""
@@ -1936,6 +1977,23 @@ class InteractiveGUI:
         except Exception as e:
             self.log_message(f"Błąd zapisywania: {e}", "ERROR")
             messagebox.showerror("Błąd", f"Nie można zapisać zmian:\\n{e}")
+    
+    def get_selected_text_id(self):
+        """Get currently selected text ID"""
+        if self.stored_text_data:
+            return self.stored_text_data.get('id')
+        return None
+    
+    def get_selected_segment_id(self):
+        """Get currently selected segment ID"""
+        if self.stored_segment_data:
+            return self.stored_segment_data.get('id')
+        return None
+    
+    def refresh_texts_and_segments_lists(self):
+        """Refresh both text and segment lists"""
+        self.populate_texts_list()
+        self.populate_segments_list()
     
     # Metody pomocnicze
     def log_message(self, message, level="INFO"):
