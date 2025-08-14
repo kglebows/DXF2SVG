@@ -6,6 +6,7 @@ import svgwrite
 import math
 from typing import List, Dict, Tuple
 from src.utils.console_logger import console, logger
+from src.core.geometry_utils import find_main_cluster
 import src.core.config as config
 
 def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unassigned_segments: List, output_path: str, station_id: str = None) -> None:
@@ -45,11 +46,39 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
         console.error("Brak punktów do wyświetlenia")
         return
 
-    # Znajdź granice
-    min_x = min(point[0] for point in all_points)
-    max_x = max(point[0] for point in all_points)
-    min_y = min(point[1] for point in all_points)
-    max_y = max(point[1] for point in all_points)
+    # Usuń outliers przed obliczaniem granic - filtruj odległe elementy
+    console.processing("Filtrowanie odległych elementów (outliers)")
+    logger.info(f"Punktów przed filtrowaniem outlierów: {len(all_points)}")
+    
+    # Znajdź główny klaster punktów i usuń outliers
+    main_cluster_center = find_main_cluster(all_points, config.CLUSTER_DISTANCE_THRESHOLD)
+    
+    # Filtruj punkty - zostaw tylko te w głównym klastrze
+    filtered_points = []
+    outliers_count = 0
+    for point in all_points:
+        distance = math.sqrt((point[0] - main_cluster_center[0])**2 + (point[1] - main_cluster_center[1])**2)
+        if distance <= config.CLUSTER_DISTANCE_THRESHOLD:
+            filtered_points.append(point)
+        else:
+            outliers_count += 1
+    
+    if outliers_count > 0:
+        logger.info(f"Usunięto {outliers_count} odległych elementów (outliers)")
+        console.info(f"Usunięto outliers", f"{outliers_count} elementów")
+    
+    # Użyj przefiltrowanych punktów do obliczania granic
+    if not filtered_points:
+        logger.warning("Wszystkie punkty zostały uznane za outliers - używam oryginalnych punktów")
+        filtered_points = all_points
+    
+    logger.info(f"Punktów po filtrowaniu outlierów: {len(filtered_points)}")
+
+    # Znajdź granice na podstawie przefiltrowanych punktów
+    min_x = min(point[0] for point in filtered_points)
+    max_x = max(point[0] for point in filtered_points)
+    min_y = min(point[1] for point in filtered_points)
+    max_y = max(point[1] for point in filtered_points)
     
     # Margines
     margin = config.MARGIN
@@ -259,11 +288,39 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         console.error("Brak punktów do skalowania")
         return
 
-    # Znajdź granice
-    min_x = min(point[0] for point in all_points)
-    max_x = max(point[0] for point in all_points)
-    min_y = min(point[1] for point in all_points)
-    max_y = max(point[1] for point in all_points)
+    # Usuń outliers przed obliczaniem granic - filtruj odległe elementy
+    console.processing("Filtrowanie odległych elementów (outliers)")
+    logger.info(f"Punktów przed filtrowaniem outlierów: {len(all_points)}")
+    
+    # Znajdź główny klaster punktów i usuń outliers
+    main_cluster_center = find_main_cluster(all_points, config.CLUSTER_DISTANCE_THRESHOLD)
+    
+    # Filtruj punkty - zostaw tylko te w głównym klastrze
+    filtered_points = []
+    outliers_count = 0
+    for point in all_points:
+        distance = math.sqrt((point[0] - main_cluster_center[0])**2 + (point[1] - main_cluster_center[1])**2)
+        if distance <= config.CLUSTER_DISTANCE_THRESHOLD:
+            filtered_points.append(point)
+        else:
+            outliers_count += 1
+    
+    if outliers_count > 0:
+        logger.info(f"Usunięto {outliers_count} odległych elementów (outliers)")
+        console.info(f"Usunięto outliers", f"{outliers_count} elementów")
+    
+    # Użyj przefiltrowanych punktów do obliczania granic
+    if not filtered_points:
+        logger.warning("Wszystkie punkty zostały uznane za outliers - używam oryginalnych punktów")
+        filtered_points = all_points
+    
+    logger.info(f"Punktów po filtrowaniu outlierów: {len(filtered_points)}")
+
+    # Znajdź granice na podstawie przefiltrowanych punktów
+    min_x = min(point[0] for point in filtered_points)
+    max_x = max(point[0] for point in filtered_points)
+    min_y = min(point[1] for point in filtered_points)
+    max_y = max(point[1] for point in filtered_points)
     
     # Margines
     margin = config.MARGIN
@@ -520,9 +577,37 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
         console.error("Brak punktów do skalowania")
         return
 
-    # Znajdź granice danych
-    all_x = [p[0] for p in all_points]
-    all_y = [p[1] for p in all_points]
+    # Usuń outliers przed obliczaniem granic - filtruj odległe elementy
+    console.processing("Filtrowanie odległych elementów (outliers)")
+    logger.info(f"Punktów przed filtrowaniem outlierów: {len(all_points)}")
+    
+    # Znajdź główny klaster punktów i usuń outliers
+    main_cluster_center = find_main_cluster(all_points, config.CLUSTER_DISTANCE_THRESHOLD)
+    
+    # Filtruj punkty - zostaw tylko te w głównym klastrze
+    filtered_points = []
+    outliers_count = 0
+    for point in all_points:
+        distance = math.sqrt((point[0] - main_cluster_center[0])**2 + (point[1] - main_cluster_center[1])**2)
+        if distance <= config.CLUSTER_DISTANCE_THRESHOLD:
+            filtered_points.append(point)
+        else:
+            outliers_count += 1
+    
+    if outliers_count > 0:
+        logger.info(f"Usunięto {outliers_count} odległych elementów (outliers)")
+        console.info(f"Usunięto outliers", f"{outliers_count} elementów")
+    
+    # Użyj przefiltrowanych punktów do obliczania granic
+    if not filtered_points:
+        logger.warning("Wszystkie punkty zostały uznane za outliers - używam oryginalnych punktów")
+        filtered_points = all_points
+    
+    logger.info(f"Punktów po filtrowaniu outlierów: {len(filtered_points)}")
+
+    # Znajdź granice danych na podstawie przefiltrowanych punktów
+    all_x = [p[0] for p in filtered_points]
+    all_y = [p[1] for p in filtered_points]
     min_x, max_x = min(all_x), max(all_x)
     min_y, max_y = min(all_y), max(all_y)
     

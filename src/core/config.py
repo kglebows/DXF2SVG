@@ -63,7 +63,21 @@ TEXT_FORMATS = {
         'inverter_format': lambda inv: f"I{inv.zfill(2)}",  # I01, I02, etc.
         'mppt_format': lambda mppt: f"MPPT{mppt.zfill(2)}",  # MPPT01, MPPT02, etc.
         'substring_format': lambda: "S00"  # Zawsze string 0
-    }
+    },
+    # Format 5: STACJA/FALOWNIK/STR (Upale - nowy format)
+    'format_5': {
+        'pattern': r'^([^/]+)/F(\d+)/(STR\d+)$',
+        'description': 'Format: STACJA/FALOWNIK/STR (np. STM2/F06/STR19)',
+        'groups': {
+            'station': 1,      # Grupa 1: STACJA
+            'inverter': 2,     # Grupa 2: FALOWNIK (numer)
+            'mppt': 3         # Grupa 3: STR (string jako MPPT)
+        },
+        'station_format': lambda station: station,  # Bez zmian
+        'inverter_format': lambda inv: f"I{inv.zfill(2)}",  # Dodaj I i wypełnij zerami
+        'mppt_format': lambda str_num: f"MPPT{str_num.replace('STR', '').zfill(2)}",  # STR19 -> MPPT19
+        'substring_format': lambda: "S00"  # Zawsze string 0
+    },
 }
 
 # WYBIERZ FORMAT DLA TEGO OBIEKTU
@@ -259,6 +273,20 @@ def try_parse_format(cleaned_text: str, format_name: str, original_text: str, st
                 'substring': format_config['substring_format']()
             }
             logger.debug(f"Format 4 - Inverter: {inverter_num}, MPPT: {mppt_num}, String: 00 (auto), Station: {station_id}")
+            
+        elif format_name == 'format_5':
+            # Format: STACJA/F<INVERTER>/STR<MPPT> (zawsze string 0)
+            station = match.group(groups['station'])
+            inverter_num = match.group(groups['inverter'])
+            str_mppt = match.group(groups['mppt'])  # STR19
+            
+            result = {
+                'station': format_config['station_format'](station),
+                'inverter': format_config['inverter_format'](inverter_num),
+                'mppt': format_config['mppt_format'](str_mppt),  # STR19 -> MPPT19
+                'substring': format_config['substring_format']()  # S00
+            }
+            logger.debug(f"Format 5 - Station: {station}, Inverter: {inverter_num}, STR-MPPT: {str_mppt}, String: 00 (auto)")
         
         logger.debug(f"Sparsowane dane ({format_name}): {result}")
         return result
