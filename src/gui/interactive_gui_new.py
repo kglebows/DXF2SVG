@@ -1530,6 +1530,12 @@ class InteractiveGUI:
             
             self.log_message("🔄 Regeneruję SVG z nowymi przypisaniami...")
             
+            # ZAPISZ AKTUALNĄ POZYCJĘ VIEWPORTU
+            viewport_state = None
+            if hasattr(self, 'svg_viewer') and self.svg_viewer:
+                viewport_state = self.svg_viewer.get_viewport_state()
+                self.log_message(f"💾 Zapisano pozycję viewportu: zoom {int(viewport_state['scale']*100)}%")
+            
             # Pobierz dane z ostatniej konwersji
             assigned_data = self.last_conversion_data.get('assigned_data', {}).copy()
             station_texts = self.last_conversion_data.get('station_texts', [])
@@ -1590,9 +1596,32 @@ class InteractiveGUI:
             except Exception as ve:
                 self.log_error(f"Walidacja SVG nie powiodła się: {ve}")
             
-            # Przełącz widok na interactive i odśwież
+            # Przełącz widok na interactive i odśwież ZACHOWUJĄC POZYCJĘ
             self.current_display_mode.set("interactive")
-            self.change_display_mode()
+            svg_path = "interactive_assignment.svg"
+            self.current_svg_path.set(svg_path)
+            
+            # Aktualizuj informację o pliku
+            if os.path.exists(svg_path):
+                file_size = os.path.getsize(svg_path) / 1024
+                self.current_file_info.set(f"Plik: {svg_path} ({file_size:.1f}KB)")
+            else:
+                self.current_file_info.set(f"Plik: {svg_path} (brak)")
+            
+            # Wczytaj SVG ZACHOWUJĄC VIEWPORT
+            if viewport_state and hasattr(self, 'svg_viewer') and self.svg_viewer:
+                self.svg_viewer.load_svg(svg_path, preserve_viewport=True)
+                # Przywróć pozycję natychmiast
+                self.svg_viewer.set_viewport_state(viewport_state)
+                self.log_message(f"🔄 Przywrócono pozycję viewportu: zoom {int(viewport_state['scale']*100)}%")
+                self.update_zoom_display()
+            else:
+                # Standardowe wczytanie (pierwsze wczytanie)
+                self.svg_viewer.load_svg(svg_path)
+                self.update_zoom_display()
+            
+            self.update_svg_info(svg_path)
+            self.log_message(f"Odświeżono podgląd: {os.path.basename(svg_path)}")
             
             # Aktualizuj listy po regeneracji
             self.populate_texts_list()
@@ -1604,6 +1633,18 @@ class InteractiveGUI:
             self.log_message(f"❌ Błąd regeneracji SVG: {e}", "ERROR")
             # Nie przerywaj operacji - użyj standardowego odświeżania
             self.refresh_svg()
+
+    def _restore_viewport_position(self, viewport_state):
+        """Pomocnicza funkcja do przywracania pozycji viewportu"""
+        try:
+            if hasattr(self, 'svg_viewer') and self.svg_viewer and viewport_state:
+                self.svg_viewer.set_viewport_state(viewport_state)
+                self.log_message(f"🔄 Przywrócono pozycję viewportu: zoom {int(viewport_state['scale']*100)}%")
+                self.update_zoom_display()
+            else:
+                self.log_message("⚠️ Nie można przywrócić pozycji - brak viewera lub stanu")
+        except Exception as e:
+            self.log_message(f"⚠️ Nie udało się przywrócić pozycji viewportu: {e}")
 
     def skip_text(self):
         """Pomiń zapamiętany tekst - UMOŻLIWIA POMIJANIE DOWOLNYCH TEKSTÓW"""
