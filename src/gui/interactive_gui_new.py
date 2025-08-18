@@ -615,8 +615,14 @@ class InteractiveGUI:
         ttk.Label(segment_column, textvariable=self.stored_segment_info,
                  font=('Arial', 8), wraplength=150).pack(anchor=tk.W, pady=(2, 5))
         
-        ttk.Button(segment_column, text="Wyczyść segment", 
-                  command=self.clear_selected_segment, width=15).pack(anchor=tk.W)
+        # Przyciski dla segmentu w jednym rzędzie
+        segment_buttons_frame = ttk.Frame(segment_column)
+        segment_buttons_frame.pack(anchor=tk.W)
+        
+        ttk.Button(segment_buttons_frame, text="Wyczyść segment", 
+                  command=self.clear_selected_segment, width=13).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(segment_buttons_frame, text="🧹 Wyczyść przypisania", 
+                  command=self.clear_selected_segment_assignments, width=16).pack(side=tk.LEFT)
         
         # Sekcja akcji - podzielona na rzędy
         actions_section = ttk.LabelFrame(self.assignment_section, text="Akcje", padding=5)
@@ -632,6 +638,8 @@ class InteractiveGUI:
                   command=self.skip_text).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(action_frame1, text="🗑️ Usuń", 
                   command=self.remove_text_segment_assignment).pack(side=tk.LEFT, padx=(0,5))
+        ttk.Button(action_frame1, text="🧹 Wyczyść segment", 
+                  command=self.clear_segment_assignments).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(action_frame1, text="� Odśwież SVG", 
                   command=self.regenerate_and_refresh_svg).pack(side=tk.LEFT, padx=(0,5))
         ttk.Button(action_frame1, text="Zapisz zmiany", 
@@ -971,31 +979,103 @@ class InteractiveGUI:
         self.log_message("Wymuszono pełne renderowanie")
     
     def on_svg_assignment_made(self, assignment_data):
-        """Callback when assignment is made in SVG viewer"""
+        """Callback when assignment is made in SVG viewer - automatyczne przypisanie lub czyszczenie"""
         try:
-            text_id = assignment_data.get('text_id', '').strip()
-            line_element = assignment_data.get('line_element')
+            action = assignment_data.get('action', 'assign')
             
-            if text_id and line_element:
-                self.log_message(f"SVG Viewer: Wybrano tekst '{text_id}' i linię.")
+            if action == 'clear_line':
+                # Czyszczenie przypisań dla linii
+                segment_id = assignment_data.get('segment_id')
+                if segment_id:
+                    self.log_message(f"SVG: Czyszczenie przypisań dla segmentu #{segment_id}")
+                    
+                    if not self.assignment_manager:
+                        self.log_error("AssignmentManager nie jest zainicjalizowany!")
+                        return
+                    
+                    # Znajdź wszystkie teksty przypisane do tego segmentu
+                    assigned_texts = []
+                    for text_id, assigned_segments in self.assigned_data.items():
+                        if segment_id in assigned_segments:
+                            assigned_texts.append(text_id)
+                    
+                    if not assigned_texts:
+                        self.log_message(f"Segment #{segment_id} nie ma przypisanych tekstów.")
+                        return
+                    
+                    # Wykonaj usunięcie wszystkich przypisań dla tego segmentu bez potwierdzenia
+                    try:
+                        removed_count = 0
+                        for text_id in assigned_texts:
+                            result = self.assignment_manager.remove_assignment(text_id, segment_id)
+                            if result['success']:
+                                removed_count += 1
+                                self.log_message(f"✅ Usunięto: {text_id} <- #{segment_id}")
+                            else:
+                                self.log_error(f"❌ {result['message']}")
+                        
+                        if removed_count > 0:
+                            # Aktualizuj lokalne dane GUI z AssignmentManager
+                            self.assigned_data = self.assignment_manager.current_assigned_data
+                            self.unassigned_texts = self.assignment_manager.unassigned_texts
+                            self.unassigned_segments = self.assignment_manager.unassigned_segments
+                            
+                            self.log_message(f"✅ Wyczyszczono segment #{segment_id}: usunięto {removed_count} przypisań")
+                            
+                            # Odśwież listy
+                            self.refresh_texts_and_segments_lists()
+                            
+                            # Zawsze odśwież SVG po czyszczeniu (dla natychmiastowego feedbacku)
+                            self.regenerate_and_refresh_svg()
+                            
+                            # Aktualizuj status
+                            self.unassigned_status.set(f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, {len(self.unassigned_segments)} nieprzypisanych segmentów")
+                            
+                        else:
+                            self.log_error("Nie udało się usunąć żadnych przypisań!")
+                            
+                    except Exception as e:
+                        self.log_error(f"❌ Błąd czyszczenia segmentu: {e}")
                 
-                # Znajdź i zaznacz tekst na liście
-                self.select_listbox_item_by_id(self.texts_listbox, self.all_texts, 'id', text_id)
-                self.select_text()
+            else:
+                # Standardowe przypisanie
+                text_id = assignment_data.get('text_id', '').strip()
+                line_element = assignment_data.get('line_element')
                 
-                # Znajdź i zaznacz linię (segment) na liście
-                line_id = line_element.svg_data['attributes'].get('data-segment-id')
-                if line_id:
-                    self.select_listbox_item_by_id(self.segments_listbox, self.all_segments, 'id', int(line_id))
-                    self.select_segment()
-                    self.log_message(f"SVG Viewer: Znaleziono segment #{line_id} do przypisania.")
-                    # Automatyczne przypisanie
-                    self.assign_text_to_segment()
-                else:
-                    self.log_error("Brak 'data-segment-id' w wybranym elemencie linii.")
+                if text_id and line_element:
+                    # Usuń suffix (#XXX) z text_id jeśli istnieje
+                    clean_text_id = text_id
+                    if ' (#' in clean_text_id:
+                        clean_text_id = clean_text_id.split(' (#')[0]
+                    
+                    self.log_message(f"SVG: Wybrano tekst '{text_id}' (clean: '{clean_text_id}') i linię.")
+                    
+                    # Znajdź i zaznacz tekst na liście używając oczyszczonego ID
+                    self.select_listbox_item_by_id(self.texts_listbox, self.all_texts, 'id', clean_text_id)
+                    
+                    # Znajdź i zaznacz linię (segment) na liście
+                    line_id = line_element.svg_data['attributes'].get('data-segment-id')
+                    if line_id:
+                        self.select_listbox_item_by_id(self.segments_listbox, self.all_segments, 'id', int(line_id))
+                        self.log_message(f"SVG: Znaleziono segment #{line_id} do przypisania.")
+                        
+                        # Zapamiętaj wybory dla wykonania przypisania
+                        sorted_texts = sorted(self.all_texts, key=lambda x: x.get('id', ''))
+                        sorted_segments = sorted(self.all_segments, key=lambda x: x.get('id', 0))
+                        
+                        if (self.selected_text_index is not None and self.selected_text_index < len(sorted_texts) and
+                            self.selected_segment_index is not None and self.selected_segment_index < len(sorted_segments)):
+                            
+                            self.stored_text_data = sorted_texts[self.selected_text_index]
+                            self.stored_segment_data = sorted_segments[self.selected_segment_index]
+                            
+                            # Automatyczne przypisanie (jak było wcześniej)
+                            self.assign_text_to_segment()
+                    else:
+                        self.log_error("Brak 'data-segment-id' w wybranym elemencie linii.")
 
         except Exception as e:
-            self.log_error(f"Błąd podczas przypisywania w SVG: {e}")
+            self.log_error(f"Błąd podczas operacji SVG: {e}")
     
     def update_zoom_display(self):
         """Aktualizacja wyświetlania zoomu"""
@@ -1279,17 +1359,23 @@ class InteractiveGUI:
     
     def select_text(self):
         """Zapamiętaj wybrany tekst - UMOŻLIWIA WYBÓR DOWOLNEGO TEKSTU"""
-        if self.selected_text_index is None:
+        # Sprawdź czy coś jest zaznaczone w listbox
+        selection = self.texts_listbox.curselection()
+        if not selection:
             messagebox.showwarning("Uwaga", "Najpierw kliknij na tekst w liście")
             return
         
+        # Użyj aktualnego zaznaczenia z listbox
+        idx = selection[0]
+        self.selected_text_index = idx
+        
         # Pobierz dane z posortowanej listy wszystkich tekstów
         sorted_texts = sorted(self.all_texts, key=lambda x: x.get('id', ''))
-        if self.selected_text_index >= len(sorted_texts):
+        if idx >= len(sorted_texts):
             messagebox.showerror("Błąd", "Nieprawidłowy indeks tekstu")
             return
         
-        selected_text = sorted_texts[self.selected_text_index]
+        selected_text = sorted_texts[idx]
         text_id = selected_text.get('id')
         
         # Sprawdź status tekstu (nieprzypisany / przypisany)
@@ -1325,17 +1411,23 @@ class InteractiveGUI:
     
     def select_segment(self):
         """Zapamiętaj wybrany segment - UMOŻLIWIA WYBÓR DOWOLNEGO SEGMENTU"""
-        if self.selected_segment_index is None:
+        # Sprawdź czy coś jest zaznaczone w listbox
+        selection = self.segments_listbox.curselection()
+        if not selection:
             messagebox.showwarning("Uwaga", "Najpierw kliknij na segment w liście")
             return
         
+        # Użyj aktualnego zaznaczenia z listbox
+        idx = selection[0]
+        self.selected_segment_index = idx
+        
         # Pobierz dane z posortowanej listy wszystkich segmentów
         sorted_segments = sorted(self.all_segments, key=lambda x: x.get('id', 0))
-        if self.selected_segment_index >= len(sorted_segments):
+        if idx >= len(sorted_segments):
             messagebox.showerror("Błąd", "Nieprawidłowy indeks segmentu")
             return
         
-        selected_segment = sorted_segments[self.selected_segment_index]
+        selected_segment = sorted_segments[idx]
         segment_id = selected_segment.get('id')
         
         # Sprawdź status segmentu (nieprzypisany / przypisany)
@@ -1376,6 +1468,81 @@ class InteractiveGUI:
         self.stored_segment_info.set("❌ Brak wybranego segmentu")
         self.log_message("Wyczyszczono zapamiętany segment")
     
+    def clear_selected_segment_assignments(self):
+        """Wyczyść wszystkie przypisania dla zapamiętanego segmentu"""
+        if not self.stored_segment_data:
+            messagebox.showwarning("Brak wyboru", "Najpierw wybierz segment (z listy lub kliknij w SVG)!")
+            return
+        
+        segment_id = self.stored_segment_data.get('id')
+        if not segment_id:
+            messagebox.showerror("Błąd", "Nie można ustalić ID segmentu!")
+            return
+        
+        if not self.assignment_manager:
+            messagebox.showerror("Błąd", "AssignmentManager nie jest zainicjalizowany!")
+            return
+        
+        # Znajdź wszystkie teksty przypisane do tego segmentu
+        assigned_texts = []
+        for text_id, assigned_segments in self.assigned_data.items():
+            if segment_id in assigned_segments:
+                assigned_texts.append(text_id)
+        
+        if not assigned_texts:
+            messagebox.showinfo("Informacja", f"Segment #{segment_id} nie ma przypisanych tekstów.")
+            return
+        
+        # Potwierdź usunięcie
+        texts_list = "\n".join([f"• {text_id}" for text_id in assigned_texts])
+        msg = f"Czy na pewno chcesz wyczyścić wszystkie przypisania dla segmentu #{segment_id}?\n\nUsunięte zostaną przypisania tekstów:\n{texts_list}"
+        if not messagebox.askyesno("Potwierdzenie czyszczenia segmentu", msg):
+            return
+        
+        # Wykonaj usunięcie wszystkich przypisań dla tego segmentu
+        try:
+            removed_count = 0
+            for text_id in assigned_texts:
+                result = self.assignment_manager.remove_assignment(text_id, segment_id)
+                if result['success']:
+                    removed_count += 1
+                    self.log_message(f"✅ {result['message']}")
+                else:
+                    self.log_error(f"❌ {result['message']}")
+            
+            if removed_count > 0:
+                # Aktualizuj lokalne dane GUI z AssignmentManager
+                self.assigned_data = self.assignment_manager.current_assigned_data
+                self.unassigned_texts = self.assignment_manager.unassigned_texts
+                self.unassigned_segments = self.assignment_manager.unassigned_segments
+                
+                self.log_message(f"✅ Wyczyszczono segment #{segment_id}: usunięto {removed_count} przypisań")
+                
+                # Odśwież listy
+                self.refresh_texts_and_segments_lists()
+                
+                # Zawsze odśwież SVG po czyszczeniu (dla natychmiastowego feedbacku)
+                self.regenerate_and_refresh_svg()
+                
+                # Aktualizuj status w zapamiętanych wyborach - segment nadal zapamiętany ale pokazuje nowy status
+                unassigned_segment_ids = {segment.get('id') for segment in self.unassigned_segments}
+                is_unassigned = segment_id in unassigned_segment_ids
+                status = "🔴 NIEPRZYPISANY" if is_unassigned else "🟢 PRZYPISANY"
+                start = self.stored_segment_data.get('start', [0, 0])
+                end = self.stored_segment_data.get('end', [0, 0])
+                info_text = f"✅ SEGMENT: #{segment_id}\nOd: ({start[0]:.1f}, {start[1]:.1f})\nDo: ({end[0]:.1f}, {end[1]:.1f})\nStatus: {status}"
+                self.stored_segment_info.set(info_text)
+                
+                # Aktualizuj status
+                self.unassigned_status.set(f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, {len(self.unassigned_segments)} nieprzypisanych segmentów")
+                
+            else:
+                messagebox.showwarning("Uwaga", "Nie udało się usunąć żadnych przypisań!")
+                
+        except Exception as e:
+            self.log_error(f"❌ Błąd czyszczenia segmentu: {e}")
+            messagebox.showerror("Błąd", f"Błąd podczas czyszczenia segmentu: {e}")
+
     def check_assignment_ready(self):
         """Sprawdź czy można wykonać przypisanie i zaktualizuj przycisk"""
         if self.stored_text_data and self.stored_segment_data:
@@ -1518,6 +1685,72 @@ class InteractiveGUI:
             messagebox.showerror("Błąd", f"Błąd podczas usuwania przypisania: {e}")
         
         self.selected_text_index = None
+        self.selected_segment_index = None
+
+    def clear_segment_assignments(self):
+        """Wyczyść wszystkie przypisania dla zaznaczonego segmentu"""
+        if not self.assignment_manager:
+            messagebox.showerror("Błąd", "AssignmentManager nie jest zainicjalizowany!")
+            return
+        
+        # Pobierz zaznaczony segment
+        segment_id = self.get_selected_segment_id()
+        
+        if not segment_id:
+            messagebox.showwarning("Brak wyboru", "Wybierz segment do wyczyszczenia przypisań!")
+            return
+        
+        # Znajdź wszystkie teksty przypisane do tego segmentu
+        assigned_texts = []
+        for text_id, assigned_segments in self.assigned_data.items():
+            if segment_id in assigned_segments:
+                assigned_texts.append(text_id)
+        
+        if not assigned_texts:
+            messagebox.showinfo("Informacja", f"Segment #{segment_id} nie ma przypisanych tekstów.")
+            return
+        
+        # Potwierdź usunięcie
+        texts_list = "\n".join([f"• {text_id}" for text_id in assigned_texts])
+        msg = f"Czy na pewno chcesz wyczyścić wszystkie przypisania dla segmentu #{segment_id}?\n\nUsunięte zostaną przypisania tekstów:\n{texts_list}"
+        if not messagebox.askyesno("Potwierdzenie czyszczenia segmentu", msg):
+            return
+        
+        # Wykonaj usunięcie wszystkich przypisań dla tego segmentu
+        try:
+            removed_count = 0
+            for text_id in assigned_texts:
+                result = self.assignment_manager.remove_assignment(text_id, segment_id)
+                if result['success']:
+                    removed_count += 1
+                    self.log_message(f"✅ {result['message']}")
+                else:
+                    self.log_error(f"❌ {result['message']}")
+            
+            if removed_count > 0:
+                # Aktualizuj lokalne dane GUI z AssignmentManager
+                self.assigned_data = self.assignment_manager.current_assigned_data
+                self.unassigned_texts = self.assignment_manager.unassigned_texts
+                self.unassigned_segments = self.assignment_manager.unassigned_segments
+                
+                self.log_message(f"✅ Wyczyszczono segment #{segment_id}: usunięto {removed_count} przypisań")
+                
+                # Odśwież listy
+                self.refresh_texts_and_segments_lists()
+                
+                # Zawsze odśwież SVG po czyszczeniu (dla natychmiastowego feedbacku)
+                self.regenerate_and_refresh_svg()
+                
+                # Aktualizuj status
+                self.unassigned_status.set(f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, {len(self.unassigned_segments)} nieprzypisanych segmentów")
+                
+            else:
+                messagebox.showwarning("Uwaga", "Nie udało się usunąć żadnych przypisań!")
+                
+        except Exception as e:
+            self.log_error(f"❌ Błąd czyszczenia segmentu: {e}")
+            messagebox.showerror("Błąd", f"Błąd podczas czyszczenia segmentu: {e}")
+        
         self.selected_segment_index = None
 
     

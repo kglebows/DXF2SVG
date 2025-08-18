@@ -934,13 +934,19 @@ class EnhancedSVGViewer:
         self.assignment_frame.pack(side=tk.LEFT, padx=(0, 10))
         
         # Assign button
-        self.assign_btn = ttk.Button(self.assignment_frame, text="Przypisz Tekst do Linii", 
+        self.assign_btn = ttk.Button(self.assignment_frame, text="Przypisz Tekst", 
                                    command=self.assign_text_to_line,
                                    state='disabled')
-        self.assign_btn.pack(side=tk.LEFT, padx=(0, 10))
+        self.assign_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Clear line assignments button  
+        self.clear_line_btn = ttk.Button(self.assignment_frame, text="Wyczyść linię", 
+                                       command=self.clear_line_assignments,
+                                       state='disabled')
+        self.clear_line_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         # Clear selection button
-        self.clear_btn = ttk.Button(self.assignment_frame, text="Wyczysc Wybor", 
+        self.clear_btn = ttk.Button(self.assignment_frame, text="Wyczyść wybór", 
                                   command=self.clear_assignment_selection)
         self.clear_btn.pack(side=tk.LEFT, padx=(0, 10))
         
@@ -971,9 +977,13 @@ class EnhancedSVGViewer:
         """Update assignment button states"""
         can_assign = (self.selected_text_element is not None and 
                      self.selected_line_element is not None)
+        can_clear_line = self.selected_line_element is not None
         
         # Enable/disable assign button
         self.assign_btn.config(state='normal' if can_assign else 'disabled')
+        
+        # Enable/disable clear line button
+        self.clear_line_btn.config(state='normal' if can_clear_line else 'disabled')
     
     def assign_text_to_line(self):
         """Assign selected text to selected line"""
@@ -1002,6 +1012,35 @@ class EnhancedSVGViewer:
         # Clear assignment selection
         self.clear_assignment_selection()
     
+    def clear_line_assignments(self):
+        """Clear all assignments for selected line"""
+        if not self.selected_line_element:
+            return
+        
+        # Extract line ID from selected line element
+        line_element = self.selected_line_element
+        line_id = line_element.svg_data['attributes'].get('data-segment-id')
+        
+        if line_id:
+            # Create clear assignment data
+            clear_data = {
+                'line_element': self.selected_line_element,
+                'segment_id': int(line_id),
+                'action': 'clear_line'
+            }
+            
+            # Notify callback if available (this should update the main GUI)
+            if self.on_assignment_made:
+                self.on_assignment_made(clear_data)
+        
+        # Keep line selected but clear text selection
+        if self.selected_text_element:
+            self.set_element_style(self.selected_text_element, 'normal')
+            self.selected_text_element = None
+        
+        self.update_assignment_buttons()
+        self.update_assignment_status()
+
     def delete_selected_elements(self):
         """Delete selected elements"""
         if not self.selected_elements:
