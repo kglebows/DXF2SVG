@@ -13,7 +13,7 @@ from tkinter import ttk
 import os
 import xml.etree.ElementTree as ET
 import math
-from typing import Optional, Dict, List, Tuple, Any, Callable
+from typing import Optional, Tuple, List, Callable, Dict, Any
 
 
 class InteractiveElement:
@@ -168,8 +168,13 @@ class EnhancedSVGViewer:
         self.canvas.bind("<Delete>", self.on_delete_key)
         self.canvas.bind("<BackSpace>", self.on_delete_key)
         
-    def load_svg(self, svg_path: str):
-        """Load SVG file with improved parsing"""
+    def load_svg(self, svg_path: str, preserve_viewport: bool = False):
+        """Load SVG file with improved parsing
+        
+        Args:
+            svg_path: Path to SVG file
+            preserve_viewport: If True, don't reset viewport position
+        """
         try:
             if not os.path.exists(svg_path):
                 self.display_message("SVG file not found", "error")
@@ -190,8 +195,12 @@ class EnhancedSVGViewer:
             self.selected_elements.clear()
             self.needs_full_render = True
             
-            # Initial render with fit to window
-            self.fit_to_window()
+            # Only fit to window if we're not preserving viewport
+            if not preserve_viewport:
+                self.fit_to_window()
+            else:
+                # Just render without changing viewport
+                self.render_svg()
             
         except Exception as e:
             self.display_message(f"Error loading SVG: {str(e)}", "error")
@@ -895,6 +904,24 @@ class EnhancedSVGViewer:
     def force_full_render(self):
         """Force a complete re-render (for compatibility)"""
         self.refresh()
+
+    def get_viewport_state(self) -> Dict[str, float]:
+        """Get current viewport state (scale, pan_x, pan_y)"""
+        return {
+            'scale': self.scale,
+            'pan_x': self.pan_x,
+            'pan_y': self.pan_y
+        }
+
+    def set_viewport_state(self, state: Dict[str, float]):
+        """Set viewport state (scale, pan_x, pan_y)"""
+        if state:
+            self.scale = state.get('scale', 1.0)
+            self.pan_x = state.get('pan_x', 0)
+            self.pan_y = state.get('pan_y', 0)
+            self.needs_full_render = True
+            self.render_svg()
+            self.update_zoom_label()
     
     def create_assignment_controls(self, toolbar):
         """Create simplified assignment controls"""
