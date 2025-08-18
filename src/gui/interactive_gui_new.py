@@ -257,7 +257,7 @@ class InteractiveGUI:
         """Odśwież listę dostępnych konfiguracji"""
         configs = self.config_manager.get_available_configs()
         self.config_combo['values'] = configs
-    
+
     def on_config_change(self, event=None):
         """Obsłuż zmianę konfiguracji"""
         config_name = self.current_config_var.get()
