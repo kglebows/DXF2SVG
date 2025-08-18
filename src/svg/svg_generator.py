@@ -695,6 +695,11 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
             # Parsuj tekst żeby uzyskać strukturalne ID
             parsed_text = config.parse_text_to_dict(str_id, station_id)
             if parsed_text:
+                # Jeśli używamy zaawansowanego formatowania, przekaż oryginalny tekst
+                if config.USE_ADVANCED_FORMATTING:
+                    # Dodaj oryginalny tekst do parsed_text
+                    parsed_text['original_text'] = str_id
+                
                 structural_id = config.get_svg_id(parsed_text)
                 # Wyciągnij ID falownika ze strukturalnego ID (część po "/")
                 if "/" in structural_id:
