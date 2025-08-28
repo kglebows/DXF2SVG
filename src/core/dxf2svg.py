@@ -45,7 +45,108 @@ def extract_texts_from_dxf(doc, layer_text) -> List[Dict[str, Any]]:
     
     return texts
 
-def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_width=0) -> List[Dict[str, Any]]:
+def merge_segments_in_polylines(polylines: List[Dict], gap_tolerance: float = 1.0, max_merge_distance: float = 5.0) -> List[Dict]:
+    """
+    Łączy sąsiadujące poziome segmenty w każdej polilinii osobno w logiczne stringi.
+    
+    Args:
+        polylines: Lista polilinii z segmentami
+        gap_tolerance: Tolerancja przerw między segmentami (Y)
+        max_merge_distance: Maksymalna odległość między punktami końcowymi do łączenia (X)
+    
+    Returns:
+        Lista polilinii z połączonymi segmentami
+    """
+    merged_polylines = []
+    
+    for polyline in polylines:
+        segments = polyline['segments']
+        if not segments:
+            merged_polylines.append(polyline)
+            continue
+            
+        # WAŻNE: Łącz segmenty tylko w ramach tej samej polilinii!
+        # Sortuj segmenty wg współrzędnej X (od lewej do prawej)
+        sorted_segments = sorted(segments, key=lambda s: min(s['start'][0], s['end'][0]))
+        
+        merged_segments = []
+        
+        # Iteracyjnie łącz segmenty - rozpocznij od pierwszego
+        i = 0
+        while i < len(sorted_segments):
+            current_segment = sorted_segments[i].copy()
+            current_segment['merged_from'] = [current_segment['id']]
+            
+            # Sprawdź czy możemy połączyć z kolejnymi segmentami
+            j = i + 1
+            while j < len(sorted_segments):
+                next_segment = sorted_segments[j]
+                
+                # Sprawdź czy segmenty mogą być połączone
+                can_merge = False
+                
+                # Sprawdź czy segmenty są w podobnej wysokości (Y)
+                current_y = (current_segment['start'][1] + current_segment['end'][1]) / 2
+                next_y = (next_segment['start'][1] + next_segment['end'][1]) / 2
+                y_diff = abs(current_y - next_y)
+                
+                if y_diff <= gap_tolerance:
+                    # Sprawdź odległość X między końcem current a początkiem next
+                    current_right = max(current_segment['start'][0], current_segment['end'][0])
+                    next_left = min(next_segment['start'][0], next_segment['end'][0])
+                    x_gap = next_left - current_right
+                    
+                    # Sprawdź też odwrotnie - może next jest przed current
+                    next_right = max(next_segment['start'][0], next_segment['end'][0])
+                    current_left = min(current_segment['start'][0], current_segment['end'][0])
+                    x_gap_reverse = current_left - next_right
+                    
+                    if x_gap <= max_merge_distance and x_gap >= -max_merge_distance:
+                        can_merge = True
+                
+                if can_merge:
+                    # Połącz segmenty - rozszerz current_segment
+                    new_left = min(current_segment['start'][0], current_segment['end'][0], 
+                                 next_segment['start'][0], next_segment['end'][0])
+                    new_right = max(current_segment['start'][0], current_segment['end'][0],
+                                  next_segment['start'][0], next_segment['end'][0])
+                    
+                    # Aktualizuj current_segment jako nowy połączony segment
+                    current_segment['start'] = (new_left, current_segment['start'][1])
+                    current_segment['end'] = (new_right, current_segment['end'][1])
+                    current_segment['length'] += next_segment['length'] + abs(x_gap)
+                    current_segment['merged_from'].append(next_segment['id'])
+                    
+                    # Usuń połączony segment z listy
+                    sorted_segments.pop(j)
+                    # Nie zwiększaj j, bo kolejny segment przesunął się w dół
+                else:
+                    j += 1
+            
+            # Dodaj aktualny segment (może połączony) do wyników
+            merged_segments.append(current_segment)
+            i += 1
+        
+        # Stwórz nową polilinię z połączonymi segmentami
+        merged_polyline = polyline.copy()
+        merged_polyline['segments'] = merged_segments
+        merged_polyline['segment_count'] = len(merged_segments)
+        merged_polyline['total_length'] = sum(s['length'] for s in merged_segments)
+        
+        merged_polylines.append(merged_polyline)
+        
+        # Loguj informacje o łączeniu
+        original_count = len(segments)
+        merged_count = len(merged_segments)
+        if merged_count != original_count:
+            logger.debug(f"Polilinia {polyline['id']}: {original_count} → {merged_count} segmentów po łączeniu")
+    
+    return merged_polylines
+
+def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_width=0, 
+                              polyline_processing_mode="individual_segments",
+                              segment_merge_gap_tolerance=1.0,
+                              max_merge_distance=5.0) -> List[Dict[str, Any]]:
     """Ekstraktuje polilinie z pliku DXF z odpowiedniej warstwy i konwertuje je na segmenty"""
     polylines = []
     polyline_id = 1
@@ -145,9 +246,21 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
     if rejected_not_horizontal > 0:
         logger.warning(f"WAŻNE: {rejected_not_horizontal} segmentów odrzuconych jako nie-poziome! Może zwiększyć Y_TOLERANCE?")
     
+    # Obsługa różnych trybów przetwarzania polilinii
+    if polyline_processing_mode == "merge_segments":
+        logger.info(f"Używam trybu łączenia segmentów z tolerancją przerw: {segment_merge_gap_tolerance}")
+        polylines = merge_segments_in_polylines(polylines, segment_merge_gap_tolerance, max_merge_distance)
+        
+        # Zaktualizuj statystyki po łączeniu
+        merged_segments = sum(len(p['segments']) for p in polylines)
+        logger.info(f"Po łączeniu segmentów: {merged_segments} segmentów w {len(polylines)} poliliniach")
+        console.result("Segmentów po łączeniu", merged_segments)
+    else:
+        logger.info("Używam trybu indywidualnych segmentów (bez łączenia)")
+    
     return polylines
 
-def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], station_id: str, search_radius: float = 6.0, text_location: str = "above") -> List[Dict]:
+def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], station_id: str, search_radius: float = 6.0, text_location: str = "above", use_advanced_formatting: bool = False) -> List[Dict]:
     """Znajdź najbliższe teksty do każdej polilinii - automatyczne przypisywanie z uwzględnieniem TEXT_LOCATION"""
     console.processing("Rozpoczęcie automatycznego przypisywania na podstawie odległości")
     logger.info("Rozpoczęcie algorytmu automatycznego przypisywania tekstów do polilinii")
@@ -157,8 +270,14 @@ def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], st
     used_polylines = set()
     
     # Przefiltruj teksty dla docelowej stacji
-    station_texts = [t for t in texts if parse_text_to_dict(t['id'], station_id) and parse_text_to_dict(t['id'], station_id).get('station') == station_id]
-    console.info(f"Tekstów dla stacji {station_id}", len(station_texts))
+    if use_advanced_formatting:
+        # W zaawansowanym formatowaniu używamy wszystkich tekstów
+        station_texts = texts
+        console.info(f"Wszystkich tekstów (zaawansowane formatowanie)", len(station_texts))
+    else:
+        # W formatowaniu legacy filtrujemy po station_id
+        station_texts = [t for t in texts if parse_text_to_dict(t['id'], station_id) and parse_text_to_dict(t['id'], station_id).get('station') == station_id]
+        console.info(f"Tekstów dla stacji {station_id}", len(station_texts))
     logger.info(f"Używany parametr TEXT_LOCATION: {text_location}")
     logger.info(f"Używany parametr SEARCH_RADIUS: {search_radius}")
     
@@ -268,17 +387,27 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
     console.step("Ekstraktacja polilinii", "📏")
     polylines = extract_polylines_from_dxf(doc, config_params['LAYER_LINE'], 
                                           config_params['Y_TOLERANCE'], 
-                                          config_params['SEGMENT_MIN_WIDTH'])
+                                          config_params['SEGMENT_MIN_WIDTH'],
+                                          config_params.get('POLYLINE_PROCESSING_MODE', 'individual_segments'),
+                                          config_params.get('SEGMENT_MERGE_GAP_TOLERANCE', 1.0),
+                                          config_params.get('MAX_MERGE_DISTANCE', 5.0))
     console.result("Segmentów znaleziono", sum(len(p['segments']) for p in polylines))
     console.result("Polilinii (stringów) znaleziono", len(polylines))
     
     # Parsuj teksty dla docelowej stacji
     station_texts = []
+    
+    # Importuj flagę zaawansowanego formatowania
+    from src.core.config import USE_ADVANCED_FORMATTING
+    
     for text in all_texts:
         parsed = parse_text_to_dict(text['id'], config_params['STATION_ID'])
-        if parsed and parsed.get('station') == config_params['STATION_ID']:
-            text.update(parsed)  # Dodaj sparsowane dane do tekstu
-            station_texts.append(text)
+        if parsed:
+            # W zaawansowanym formatowaniu nie filtrujemy po station_id
+            # gdyż station może być częścią ID (np. "2-1-7" gdzie 2 to st, nie station_id)
+            if USE_ADVANCED_FORMATTING or parsed.get('station') == config_params['STATION_ID']:
+                text.update(parsed)  # Dodaj sparsowane dane do tekstu
+                station_texts.append(text)
     
     console.result(f"Tekstów dla stacji {config_params['STATION_ID']} znaleziono", len(station_texts))
     
@@ -287,7 +416,8 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
     assignments = find_closest_texts_to_polylines(all_texts, polylines, 
                                                  config_params['STATION_ID'],
                                                  config_params['SEARCH_RADIUS'], 
-                                                 config_params['TEXT_LOCATION'])
+                                                 config_params['TEXT_LOCATION'],
+                                                 USE_ADVANCED_FORMATTING)
     
     # Buduj strukturę danych invertera
     inverter_data = defaultdict(lambda: defaultdict(list))

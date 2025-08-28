@@ -111,6 +111,11 @@ X_TOLERANCE = 0.01
 SEARCH_RADIUS = 6.0 
 TEXT_LOCATION = "above"     # "above", "below", "any"
 
+# Parametry segmentacji polilinii
+POLYLINE_PROCESSING_MODE = "individual_segments"  # "individual_segments", "merge_segments" 
+SEGMENT_MERGE_GAP_TOLERANCE = 1.0  # Tolerancja przerw między segmentami do łączenia
+MAX_MERGE_DISTANCE = 5.0  # Maksymalna odległość między punktami końcowymi do łączenia
+
 # Parametry wizualizacji
 SHOW_TEXT_DOTS = True
 SHOW_TEXT_LABELS = True
@@ -177,6 +182,46 @@ def parse_text_to_dict(text: str, station_id: str = None) -> Dict:
     try:
         cleaned = clean_dxf_text(text)
         logger.debug(f"Tekst oryginalny: '{text}' -> po czyszczeniu: '{cleaned}'")
+        
+        # SPRAWDŹ NAJPIERW ZAAWANSOWANE FORMATOWANIE
+        if globals().get('USE_ADVANCED_FORMATTING', False):
+            logger.debug("Próbuję zaawansowane formatowanie...")
+            
+            from src.core.advanced_formatter import AdvancedFormatter
+            
+            input_format = globals().get('ADVANCED_INPUT_FORMAT', '')
+            output_format = globals().get('ADVANCED_OUTPUT_FORMAT', '')
+            additional_vars = globals().get('ADVANCED_ADDITIONAL_VARS', {})
+            
+            if input_format and output_format:
+                formatter = AdvancedFormatter()
+                variables = formatter.parse_input_format(cleaned, input_format)
+                
+                if variables:
+                    logger.debug(f"Zaawansowane formatowanie rozpoznało: {variables}")
+                    
+                    # Utwórz standardowy dict format dla kompatybilności z resztą systemu
+                    # Mapuj zmienne zaawansowane na standardowe pola
+                    result = {
+                        'station': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                        'station_id': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                        'inverter': f"I{variables.get('inv', 0):02d}",
+                        'mppt': f"MPPT{variables.get('mppt', 0)}",
+                        'substring': f"STR{variables.get('str', variables.get('tr', 0))}",
+                        'original_text': text,
+                        'parsed_with': 'advanced_formatting',
+                        'variables': variables  # Zachowaj oryginalne zmienne
+                    }
+                    
+                    logger.debug(f"Zwracam standardowy format: {result}")
+                    return result
+                else:
+                    logger.debug(f"Zaawansowane formatowanie nie rozpoznało tekstu '{cleaned}' z formatem '{input_format}'")
+            else:
+                logger.warning("Zaawansowane formatowanie włączone ale brak formatów input/output")
+        
+        # LEGACY FORMATOWANIE (jeśli zaawansowane nie zadziałało)
+        logger.debug("Próbuję legacy formatowanie...")
         
         # Użyj przekazanego station_id lub domyślnego z config
         if station_id is None:
