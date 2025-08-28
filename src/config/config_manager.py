@@ -157,6 +157,13 @@ class ConfigManager:
                 'max_distance': str(self.config_data.get('MAX_DISTANCE', 10.0)),
             }
             
+            # Sekcja parametrów segmentacji
+            parser['SEGMENTATION'] = {
+                'polyline_processing_mode': str(self.config_data.get('POLYLINE_PROCESSING_MODE', 'individual_segments')),
+                'segment_merge_gap_tolerance': str(self.config_data.get('SEGMENT_MERGE_GAP_TOLERANCE', 1.0)),
+                'max_merge_distance': str(self.config_data.get('MAX_MERGE_DISTANCE', 5.0)),
+            }
+            
             # Sekcja kolorów
             parser['COLORS'] = {
                 'assigned_segment_color': str(self.config_data.get('ASSIGNED_SEGMENT_COLOR', '#00778B')),

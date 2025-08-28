@@ -319,7 +319,10 @@ class InteractiveGUI:
             'Y_TOLERANCE': float(self.config_manager.get('Y_TOLERANCE', 0.01)),
             'SEGMENT_MIN_WIDTH': float(self.config_manager.get('SEGMENT_MIN_WIDTH', 0)),
             'SEARCH_RADIUS': float(self.config_manager.get('SEARCH_RADIUS', 6.0)),
-            'TEXT_LOCATION': self.config_manager.get('TEXT_LOCATION', 'above')
+            'TEXT_LOCATION': self.config_manager.get('TEXT_LOCATION', 'above'),
+            'POLYLINE_PROCESSING_MODE': self.config_manager.get('POLYLINE_PROCESSING_MODE', 'individual_segments'),
+            'SEGMENT_MERGE_GAP_TOLERANCE': float(self.config_manager.get('SEGMENT_MERGE_GAP_TOLERANCE', 1.0)),
+            'MAX_MERGE_DISTANCE': float(self.config_manager.get('MAX_MERGE_DISTANCE', 5.0))
         }
 
     def convert_and_analyze(self):
