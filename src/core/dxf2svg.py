@@ -271,9 +271,18 @@ def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], st
     
     # Przefiltruj teksty dla docelowej stacji
     if use_advanced_formatting:
-        # W zaawansowanym formatowaniu używamy wszystkich tekstów
-        station_texts = texts
-        console.info(f"Wszystkich tekstów (zaawansowane formatowanie)", len(station_texts))
+        # W zaawansowanym formatowaniu filtrujemy po zmiennej 'name' z variables
+        if station_id:
+            station_texts = []
+            for t in texts:
+                parsed = parse_text_to_dict(t['id'], station_id)
+                if parsed and parsed.get('variables', {}).get('name') == station_id:
+                    station_texts.append(t)
+            console.info(f"Tekstów dla stacji {station_id} (zaawansowane formatowanie)", len(station_texts))
+        else:
+            # Jeśli nie podano station_id, używamy wszystkich tekstów
+            station_texts = texts
+            console.info(f"Wszystkich tekstów (zaawansowane formatowanie, brak filtra)", len(station_texts))
     else:
         # W formatowaniu legacy filtrujemy po station_id
         station_texts = [t for t in texts if parse_text_to_dict(t['id'], station_id) and parse_text_to_dict(t['id'], station_id).get('station') == station_id]
@@ -397,17 +406,23 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
     # Parsuj teksty dla docelowej stacji
     station_texts = []
     
-    # Importuj flagę zaawansowanego formatowania
-    from src.core.config import USE_ADVANCED_FORMATTING
+    # Pobierz flagę zaawansowanego formatowania z parametrów lub użyj globalnej
+    use_advanced_formatting = config_params.get('USE_ADVANCED_FORMATTING', False)
     
     for text in all_texts:
         parsed = parse_text_to_dict(text['id'], config_params['STATION_ID'])
         if parsed:
-            # W zaawansowanym formatowaniu nie filtrujemy po station_id
-            # gdyż station może być częścią ID (np. "2-1-7" gdzie 2 to st, nie station_id)
-            if USE_ADVANCED_FORMATTING or parsed.get('station') == config_params['STATION_ID']:
-                text.update(parsed)  # Dodaj sparsowane dane do tekstu
-                station_texts.append(text)
+            # W zaawansowanym formatowaniu filtrujemy po zmiennej 'name'
+            if use_advanced_formatting:
+                # Filtruj po 'name' ze zmiennych zaawansowanego formatowania
+                if parsed.get('variables', {}).get('name') == config_params['STATION_ID']:
+                    text.update(parsed)  # Dodaj sparsowane dane do tekstu
+                    station_texts.append(text)
+            else:
+                # W legacy formatowaniu filtrujemy po station
+                if parsed.get('station') == config_params['STATION_ID']:
+                    text.update(parsed)  # Dodaj sparsowane dane do tekstu
+                    station_texts.append(text)
     
     console.result(f"Tekstów dla stacji {config_params['STATION_ID']} znaleziono", len(station_texts))
     
@@ -417,7 +432,7 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
                                                  config_params['STATION_ID'],
                                                  config_params['SEARCH_RADIUS'], 
                                                  config_params['TEXT_LOCATION'],
-                                                 USE_ADVANCED_FORMATTING)
+                                                 use_advanced_formatting)
     
     # Buduj strukturę danych invertera
     inverter_data = defaultdict(lambda: defaultdict(list))

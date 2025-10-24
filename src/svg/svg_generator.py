@@ -125,11 +125,14 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
                     ))
                     
                     if config.SHOW_SEGMENT_LABELS:
-                        # Pokazuj nazwę stringa na środku segmentu
+                        # Numer segmentu przy LEWEJ krawędzi
+                        left_x = seg['start'][0]
+                        left_y = seg['start'][1]
+                        
                         assigned_group.add(dwg.text(
                             string_name,
-                            insert=(scale_x(mid_x), scale_y(mid_y)+config.TEXT_SIZE/2),
-                            text_anchor="middle",
+                            insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
+                            text_anchor="start",  # Wyrównanie do lewej
                             fill=config.TEXT_SEGMENT_COLOR,
                             font_size=config.TEXT_SIZE,
                             opacity=config.TEXT_OPACITY
@@ -160,11 +163,14 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
             ))
             
             if config.SHOW_SEGMENT_LABELS:
-                # Pokazuj numer segmentu
+                # Numer segmentu przy LEWEJ krawędzi
+                left_x = seg['start'][0]
+                left_y = seg['start'][1]
+                
                 unassigned_group.add(dwg.text(
                     str(i+1),
-                    insert=(scale_x(mid_x), scale_y(mid_y)+config.TEXT_SIZE/2),
-                    text_anchor="middle",
+                    insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
+                    text_anchor="start",  # Wyrównanie do lewej
                     fill=config.TEXT_SEGMENT_COLOR,
                     font_size=config.TEXT_SIZE,
                     opacity=config.TEXT_OPACITY
@@ -359,6 +365,7 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     segment_global_index = 1  # Globalny licznik segmentów
     segment_id_to_svg_number = {}  # Mapa segment_id -> numer SVG
     drawn_segments = set()  # Zbiór już narysowanych segmentów
+    segment_to_text = {}  # Mapa segment_id -> text_id dla grup przypisań
     
     # Najpierw zbierz wszystkie unikalne segmenty z przypisań
     all_assigned_segments = {}  # segment_id -> segment_data
@@ -369,6 +376,8 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                     segment_id = seg['id']
                     if segment_id not in all_assigned_segments:
                         all_assigned_segments[segment_id] = seg
+                    # Zapisz mapowanie segment -> text dla grup
+                    segment_to_text[segment_id] = string_name
     
     # Rysuj każdy segment tylko raz
     logger.info(f"Rysowanie {len(all_assigned_segments)} przypisanych segmentów")
@@ -388,6 +397,9 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         # Dodaj atrybuty data-* bezpośrednio do elementu
         line_element.attribs['data-segment-id'] = str(segment_id)
         line_element.attribs['data-svg-number'] = str(segment_global_index)
+        # Dodaj grupę przypisania (text_id) dla hover highlight
+        if segment_id in segment_to_text:
+            line_element.attribs['data-assignment-group'] = segment_to_text[segment_id]
         assigned_group.add(line_element)
         
         # Dodaj środek segmentu jeśli włączone
@@ -403,11 +415,15 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             ))
             
             if config.SHOW_SEGMENT_LABELS:
-                # Pokazuj numer segmentu globalny - tylko raz
+                # Numer segmentu przy LEWEJ krawędzi
+                # Użyj początku segmentu (start) jako lewej krawędzi
+                left_x = seg['start'][0]
+                left_y = seg['start'][1]
+                
                 assigned_group.add(dwg.text(
                     f"#{segment_global_index}",
-                    insert=(scale_x(mid_x), scale_y(mid_y)+config.TEXT_SIZE*0.25),
-                    text_anchor="middle",
+                    insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE*0.25),
+                    text_anchor="start",  # Wyrównanie do lewej
                     fill=config.TEXT_SEGMENT_COLOR,
                     font_size=config.TEXT_SIZE*0.5,  # Mniejszy rozmiar
                     opacity=0.5  # Większa przejrzystość
@@ -433,12 +449,16 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             # Renderuj tylko przypisane teksty
             if text_id in assigned_text_ids:
                 x, y = text_data['pos']
-                assigned_group.add(dwg.circle(
+                
+                circle_element = dwg.circle(
                     center=(scale_x(x), scale_y(y)),
                     r=config.DOT_RADIUS*0.7,  # Mniejsze kropki
                     fill=config.TEXT_COLOR_ASSIGNED,
                     opacity=0.3  # Większa przejrzystość
-                ))
+                )
+                # Dodaj grupę przypisania do kropki tekstu
+                circle_element.attribs['data-assignment-group'] = text_id
+                assigned_group.add(circle_element)
                 
                 # Znajdź przypisane segmenty dla tego tekstu i ich numery SVG
                 segment_numbers = []
@@ -455,23 +475,24 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                                     segment_numbers.append(str(svg_number))
                         break
                 
-                # Format: ZIEB/F01/MPPT1/S01 (#10-#14)
+                # Format: ZIEB/F01/MPPT1/S01 (#10 #11 #12 #13 #14) - lista zamiast zakresu
                 if segment_numbers:
-                    if len(segment_numbers) == 1:
-                        segments_info = f"(#{segment_numbers[0]})"
-                    else:
-                        segments_info = f"(#{segment_numbers[0]}-#{segment_numbers[-1]})"
+                    # Wypisz wszystkie numery oddzielone spacjami
+                    segments_info = f"({' '.join(f'#{num}' for num in segment_numbers)})"
                     display_text = f"{text_data['id']} {segments_info}"
                 else:
                     display_text = f"{text_data['id']} (BŁĄD)"
                 
-                assigned_group.add(dwg.text(
+                text_element = dwg.text(
                     display_text, 
                     insert=(scale_x(x) + config.DOT_RADIUS*1.5, scale_y(y)+config.TEXT_SIZE*0.3),
                     fill=config.TEXT_COLOR_ASSIGNED,
                     opacity=0.6,  # Zwiększona przejrzystość
                     font_size=config.TEXT_SIZE*0.6  # Mniejszy rozmiar
-                ))
+                )
+                # Dodaj grupę przypisania do etykiety tekstu
+                text_element.attribs['data-assignment-group'] = text_id
+                assigned_group.add(text_element)
                 assigned_texts_count += 1
     
     console.info(f"Wyrenderowano {assigned_texts_count} przypisanych tekstów")

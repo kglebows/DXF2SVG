@@ -117,6 +117,13 @@ class ConfigManager:
                     self.config_data[key.upper()] = converted_value
                     logger.debug(f"Załadowano: {key.upper()} = {converted_value}")
             
+            # AKTUALIZUJ GLOBALNE ZMIENNE W src.core.config
+            import src.core.config as cfg
+            for key, value in self.config_data.items():
+                if hasattr(cfg, key):
+                    setattr(cfg, key, value)
+                    logger.debug(f"Zaktualizowano globalną zmienną cfg.{key} = {value}")
+            
             self.current_config_name = config_name
             logger.info(f"Załadowano konfigurację: {config_name}")
             return True
