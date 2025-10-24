@@ -22,10 +22,11 @@ class InteractiveElement:
                  canvas_id: int, svg_data: Dict[str, Any]):
         self.element_id = element_id
         self.element_type = element_type  # 'text', 'line', 'rect', etc.
-        self.bounds = bounds  # (x1, y1, x2, y2)
+        self.bounds = bounds  # (x1, y1, x2, y2) in SVG coordinates
         self.canvas_id = canvas_id
         self.svg_data = svg_data
         self.selected = False
+        self.assigned_group = None  # For tracking assigned elements (text + segments)
 
 
 class EnhancedSVGViewer:
@@ -44,8 +45,8 @@ class EnhancedSVGViewer:
         self.svg_bounds = (0, 0, 800, 600)  # Actual content bounds
         
         # Performance optimizations
-        self.viewport_buffer = 50  # Buffer around viewport for smoother panning
-        self.max_elements_per_frame = 2000  # Limit elements per render frame
+        self.viewport_buffer = 100  # Zwiększony buffer dla lepszego renderowania
+        self.max_elements_per_frame = 5000  # Zwiększony limit elementów
         self.render_cache = {}
         self.last_render_params = None
         self.needs_full_render = True
@@ -61,8 +62,13 @@ class EnhancedSVGViewer:
             'hover': '#4ECDC4',
             'text': '#2C3E50',
             'line': '#34495E',
-            'background': '#FFFFFF'
+            'background': '#FFFFFF',
+            'hover_segment': '#FFB6C1',  # Jasny różowy dla segmentów
+            'hover_text': '#8B008B'       # Ciemny fioletowy dla tekstów
         }
+        
+        # Hover state for assigned groups
+        self.hovered_group_elements: List[InteractiveElement] = []
         
         # Mouse interaction
         self.last_click_pos = (0, 0)
@@ -285,9 +291,9 @@ class EnhancedSVGViewer:
             self.svg_bounds = (0, 0, self.original_size[0], self.original_size[1])
     
     def get_viewport_bounds(self) -> Tuple[float, float, float, float]:
-        """Get current viewport bounds in SVG coordinates"""
-        canvas_width = self.canvas.winfo_width() or 800
-        canvas_height = self.canvas.winfo_height() or 600
+        """Get current viewport bounds in SVG coordinates with generous buffer"""
+        canvas_width = max(self.canvas.winfo_width(), 100)  # Minimum width
+        canvas_height = max(self.canvas.winfo_height(), 100)  # Minimum height
         
         # Convert canvas bounds to SVG coordinates
         x1 = (-self.pan_x) / self.scale
@@ -295,15 +301,21 @@ class EnhancedSVGViewer:
         x2 = (canvas_width - self.pan_x) / self.scale
         y2 = (canvas_height - self.pan_y) / self.scale
         
-        # Add buffer for smoother panning
-        buffer = self.viewport_buffer / self.scale
-        return (x1 - buffer, y1 - buffer, x2 + buffer, y2 + buffer)
+        # Dodaj BARDZO DUŻY bufor (100%) aby zawsze renderować wszystkie elementy w pobliżu
+        # To zapobiega znikaniu elementów podczas zoom/pan
+        viewport_width = x2 - x1
+        viewport_height = y2 - y1
+        buffer_x = viewport_width * 1.0  # 100% bufora!
+        buffer_y = viewport_height * 1.0
+        
+        return (x1 - buffer_x, y1 - buffer_y, x2 + buffer_x, y2 + buffer_y)
     
     def is_element_in_viewport(self, bounds: Tuple[float, float, float, float]) -> bool:
         """Check if element bounds intersect with viewport"""
         elem_x1, elem_y1, elem_x2, elem_y2 = bounds
         view_x1, view_y1, view_x2, view_y2 = self.get_viewport_bounds()
         
+        # Proste sprawdzenie przecięcia (bez dodatkowego bufora - już jest w get_viewport_bounds)
         return not (elem_x2 < view_x1 or elem_x1 > view_x2 or 
                    elem_y2 < view_y1 or elem_y1 > view_y2)
     
@@ -386,6 +398,9 @@ class EnhancedSVGViewer:
                     if bounds and self.is_element_in_viewport(bounds):
                         canvas_id = render_func(elem)
                         if canvas_id:
+                            # Parse assignment group from data-assignment-group attribute
+                            assignment_group = elem.get('data-assignment-group', None)
+                            
                             # Create interactive element
                             interactive_elem = InteractiveElement(
                                 element_id=elem.get('id', f"{element_type}_{elements_rendered}"),
@@ -398,6 +413,10 @@ class EnhancedSVGViewer:
                                     'attributes': dict(elem.attrib)
                                 }
                             )
+                            # Ustaw grupę przypisania jeśli istnieje
+                            if assignment_group:
+                                interactive_elem.assigned_group = assignment_group
+                            
                             self.interactive_elements[canvas_id] = interactive_elem
                             elements_rendered += 1
                             
@@ -420,27 +439,31 @@ class EnhancedSVGViewer:
         return elements
     
     def get_element_bounds(self, elem, element_type: str) -> Optional[Tuple[float, float, float, float]]:
-        """Get element bounds in SVG coordinates"""
+        """Get element bounds in SVG coordinates with safety margin"""
         try:
+            margin = 10  # Bezpieczny margines dla lepszego renderowania
+            
             if element_type == 'line':
                 x1 = float(elem.get('x1', 0))
                 y1 = float(elem.get('y1', 0))
                 x2 = float(elem.get('x2', 0))
                 y2 = float(elem.get('y2', 0))
-                return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+                return (min(x1, x2) - margin, min(y1, y2) - margin, 
+                       max(x1, x2) + margin, max(y1, y2) + margin)
                 
             elif element_type == 'rect':
                 x = float(elem.get('x', 0))
                 y = float(elem.get('y', 0))
                 w = float(elem.get('width', 0))
                 h = float(elem.get('height', 0))
-                return (x, y, x + w, y + h)
+                return (x - margin, y - margin, x + w + margin, y + h + margin)
                 
             elif element_type == 'circle':
                 cx = float(elem.get('cx', 0))
                 cy = float(elem.get('cy', 0))
                 r = float(elem.get('r', 0))
-                return (cx - r, cy - r, cx + r, cy + r)
+                return (cx - r - margin, cy - r - margin, 
+                       cx + r + margin, cy + r + margin)
                 
             elif element_type == 'text':
                 x = float(elem.get('x', 0))
@@ -448,7 +471,31 @@ class EnhancedSVGViewer:
                 # Estimate text bounds (rough approximation)
                 text_width = len(elem.text or '') * 8
                 text_height = 16
-                return (x, y - text_height, x + text_width, y)
+                return (x - margin, y - text_height - margin, 
+                       x + text_width + margin, y + margin)
+            
+            elif element_type == 'polyline':
+                # Parse polyline points
+                points_str = elem.get('points', '')
+                if not points_str:
+                    return None
+                
+                coords = []
+                points = points_str.replace(',', ' ').split()
+                for i in range(0, len(points) - 1, 2):
+                    try:
+                        x, y = float(points[i]), float(points[i + 1])
+                        coords.append((x, y))
+                    except (ValueError, IndexError):
+                        continue
+                
+                if not coords:
+                    return None
+                
+                xs = [c[0] for c in coords]
+                ys = [c[1] for c in coords]
+                return (min(xs) - margin, min(ys) - margin, 
+                       max(xs) + margin, max(ys) + margin)
                 
         except (ValueError, TypeError):
             return None
@@ -609,15 +656,44 @@ class EnhancedSVGViewer:
             self.render_svg()
     
     def on_mouse_press(self, event):
-        """Handle mouse press for assignment mode"""
+        """Handle mouse press for assignment mode using canvas coordinate system"""
         self.last_click_pos = (event.x, event.y)
         self.is_dragging = False
         
-        # Check for element selection
-        clicked_items = self.canvas.find_closest(event.x, event.y)
-        if clicked_items and clicked_items[0] in self.interactive_elements:
-            element = self.interactive_elements[clicked_items[0]]
-            self.handle_element_click(element)
+        # Convert widget coordinates to canvas coordinates (accounts for scrolling)
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        
+        print(f"Click: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
+        
+        # Try to find elements in increasingly larger areas
+        clicked_element = None
+        
+        # First try: small area around click
+        items = self.canvas.find_overlapping(canvas_x - 3, canvas_y - 3, 
+                                             canvas_x + 3, canvas_y + 3)
+        for item in items:
+            if item in self.interactive_elements:
+                clicked_element = self.interactive_elements[item]
+                break
+        
+        # Second try: larger area if nothing found
+        if not clicked_element:
+            items = self.canvas.find_overlapping(canvas_x - 10, canvas_y - 10, 
+                                                 canvas_x + 10, canvas_y + 10)
+            for item in items:
+                if item in self.interactive_elements:
+                    clicked_element = self.interactive_elements[item]
+                    break
+        
+        # Third try: use find_closest as fallback
+        if not clicked_element:
+            closest = self.canvas.find_closest(canvas_x, canvas_y, halo=15)
+            if closest and closest[0] in self.interactive_elements:
+                clicked_element = self.interactive_elements[closest[0]]
+        
+        if clicked_element:
+            self.handle_element_click(clicked_element)
         else:
             # Click on empty space - clear assignment selection
             self.clear_assignment_selection()
@@ -649,35 +725,102 @@ class EnhancedSVGViewer:
         self.is_dragging = False
     
     def on_mouse_motion(self, event):
-        """Handle mouse motion for hover effects"""
+        """Handle mouse motion for hover effects using canvas coordinate system"""
         if not self.interactive_elements:
             return
         
-        # Get item under cursor - handle empty canvas
-        closest = self.canvas.find_closest(event.x, event.y)
-        if not closest:
-            return
-        item = closest[0]
+        # Convert widget coordinates to canvas coordinates (accounts for scrolling)
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
         
-        if item in self.interactive_elements:
-            elem = self.interactive_elements[item]
-            if self.hover_element != elem:
-                # Clear previous hover
-                if self.hover_element:
-                    self.set_element_style(self.hover_element, 'normal')
+        # DEBUG: Pokaż współrzędne i znalezione elementy
+        print(f"Mouse: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
+        
+        # Try to find elements in increasingly larger areas
+        found_element = None
+        
+        # First try: small area around cursor
+        items = self.canvas.find_overlapping(canvas_x - 3, canvas_y - 3, 
+                                             canvas_x + 3, canvas_y + 3)
+        print(f"  Small area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
+        for item in items:
+            if item in self.interactive_elements:
+                found_element = self.interactive_elements[item]
+                print(f"  Found: {found_element.element_type} id={found_element.element_id}")
+                break
+        
+        # Second try: larger area if nothing found
+        if not found_element:
+            items = self.canvas.find_overlapping(canvas_x - 10, canvas_y - 10, 
+                                                 canvas_x + 10, canvas_y + 10)
+            print(f"  Large area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
+            for item in items:
+                if item in self.interactive_elements:
+                    found_element = self.interactive_elements[item]
+                    print(f"  Found: {found_element.element_type} id={found_element.element_id}")
+                    break
+        
+        # Third try: use find_closest as fallback
+        if not found_element:
+            closest = self.canvas.find_closest(canvas_x, canvas_y, halo=15)
+            if closest and closest[0] in self.interactive_elements:
+                found_element = self.interactive_elements[closest[0]]
+                print(f"  Closest: {found_element.element_type} id={found_element.element_id}")
+        
+        # Handle hover state
+        if found_element:
+            if self.hover_element != found_element:
+                # Clear previous hover group
+                self.clear_hover_group()
                 
                 # Set new hover
-                self.hover_element = elem
-                self.set_element_style(elem, 'hover')
+                self.hover_element = found_element
+                
+                # Check if this element has assigned group
+                if found_element.assigned_group:
+                    # Highlight all elements in the group
+                    self.highlight_assigned_group(found_element.assigned_group)
+                else:
+                    # Just highlight this element
+                    self.set_element_style(found_element, 'hover')
                 
                 # Update cursor
                 self.canvas.config(cursor="hand2")
         else:
             # Clear hover
-            if self.hover_element:
-                self.set_element_style(self.hover_element, 'normal')
+            if self.hover_element or self.hovered_group_elements:
+                self.clear_hover_group()
                 self.hover_element = None
                 self.canvas.config(cursor="")
+    
+    def highlight_assigned_group(self, group_id: str):
+        """Highlight all elements in an assigned group"""
+        self.hovered_group_elements.clear()
+        
+        for canvas_id, elem in self.interactive_elements.items():
+            if elem.assigned_group == group_id:
+                self.hovered_group_elements.append(elem)
+                
+                # Apply group hover style
+                if elem.element_type == 'text':
+                    color = self.colors['hover_text']  # Ciemny fioletowy
+                    self.canvas.itemconfig(elem.canvas_id, fill=color)
+                elif elem.element_type in ['line', 'polyline']:
+                    color = self.colors['hover_segment']  # Jasny różowy
+                    self.canvas.itemconfig(elem.canvas_id, fill=color, width=3)
+                else:
+                    color = self.colors['hover']
+                    self.canvas.itemconfig(elem.canvas_id, outline=color)
+    
+    def clear_hover_group(self):
+        """Clear hover highlighting from all group elements"""
+        if self.hover_element and not self.hover_element.assigned_group:
+            self.set_element_style(self.hover_element, 'normal')
+        
+        for elem in self.hovered_group_elements:
+            self.set_element_style(elem, 'normal')
+        
+        self.hovered_group_elements.clear()
     
     def on_key_press(self, event):
         """Handle keyboard shortcuts"""
