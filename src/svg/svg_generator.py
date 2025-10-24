@@ -112,31 +112,34 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
                     stroke_width=config.MPTT_HEIGHT
                 ))
                 
-                # Dodaj środek segmentu jeśli włączone
-                if config.SHOW_SEGMENT_CENTERS:
+                # Dodaj środek segmentu jeśli włączone (CZARNA KROPKA)
+                if config.SHOW_ELEMENT_POINTS:
                     mid_x = (seg['start'][0] + seg['end'][0]) / 2
                     mid_y = (seg['start'][1] + seg['end'][1]) / 2
                     
                     assigned_group.add(dwg.circle(
                         center=(scale_x(mid_x), scale_y(mid_y)),
                         r=config.DOT_RADIUS,
-                        fill=config.SEGMENT_CENTER_COLOR_ASSIGNED,
-                        opacity=config.TEXT_OPACITY
+                        fill='#000000',  # czarny
+                        opacity=0.8,
+                        class_='segment-marker',
+                        pointer_events='none'  # NIE klikalne
                     ))
                     
-                    if config.SHOW_SEGMENT_LABELS:
-                        # Numer segmentu przy LEWEJ krawędzi
-                        left_x = seg['start'][0]
-                        left_y = seg['start'][1]
-                        
-                        assigned_group.add(dwg.text(
-                            string_name,
-                            insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
-                            text_anchor="start",  # Wyrównanie do lewej
-                            fill=config.TEXT_SEGMENT_COLOR,
-                            font_size=config.TEXT_SIZE,
-                            opacity=config.TEXT_OPACITY
-                        ))
+                if config.SHOW_ASSIGNED_SEGMENT_LABELS:
+                    # Numer segmentu przy LEWEJ krawędzi
+                    left_x = seg['start'][0]
+                    left_y = seg['start'][1]
+                    
+                    assigned_group.add(dwg.text(
+                        string_name,
+                        insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
+                        text_anchor="start",  # Wyrównanie do lewej
+                        fill=config.TEXT_SEGMENT_COLOR,
+                        font_size=config.TEXT_SIZE,
+                        opacity=config.TEXT_OPACITY,
+                        pointer_events='none'  # NIE klikalne
+                    ))
     
     # Rysuj nieprzypisane segmenty
     for i, seg in enumerate(unassigned_segments):
@@ -150,64 +153,74 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
             stroke_width=config.MPTT_HEIGHT
         ))
         
-        # Dodaj środek segmentu jeśli włączone
-        if config.SHOW_SEGMENT_CENTERS:
+        # Dodaj środek segmentu jeśli włączone (CZARNA KROPKA)
+        if config.SHOW_ELEMENT_POINTS:
             mid_x = (seg['start'][0] + seg['end'][0]) / 2
             mid_y = (seg['start'][1] + seg['end'][1]) / 2
             
             unassigned_group.add(dwg.circle(
                 center=(scale_x(mid_x), scale_y(mid_y)),
                 r=config.DOT_RADIUS,
-                fill=config.SEGMENT_CENTER_COLOR_UNASSIGNED,
-                opacity=config.TEXT_OPACITY
+                fill='#000000',  # czarny
+                opacity=0.8,
+                class_='segment-marker',
+                pointer_events='none'  # NIE klikalne
             ))
             
-            if config.SHOW_SEGMENT_LABELS:
-                # Numer segmentu przy LEWEJ krawędzi
-                left_x = seg['start'][0]
-                left_y = seg['start'][1]
-                
-                unassigned_group.add(dwg.text(
-                    str(i+1),
-                    insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
-                    text_anchor="start",  # Wyrównanie do lewej
-                    fill=config.TEXT_SEGMENT_COLOR,
-                    font_size=config.TEXT_SIZE,
-                    opacity=config.TEXT_OPACITY
-                ))
+        if config.SHOW_UNASSIGNED_SEGMENT_LABELS:
+            # Numer segmentu przy LEWEJ krawędzi
+            left_x = seg['start'][0]
+            left_y = seg['start'][1]
+            
+            unassigned_group.add(dwg.text(
+                str(i+1),
+                insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE/2),
+                text_anchor="start",  # Wyrównanie do lewej
+                fill=config.TEXT_SEGMENT_COLOR,
+                font_size=config.TEXT_SIZE,
+                opacity=config.TEXT_OPACITY,
+                pointer_events='none'  # NIE klikalne
+            ))
     
-    # Rysuj teksty przypisane z poprawionymi rozmiarami
-    if config.SHOW_TEXT_DOTS:
+    # Rysuj teksty przypisane - czarne kropki zamiast kolorowych
+    if config.SHOW_ELEMENT_POINTS:
         for text in texts:
             from src.core.config import parse_text_to_dict
             parsed = parse_text_to_dict(text['id'], station_id)
             if parsed and parsed.get('station') == station_id:
                 pos_x, pos_y = text['pos']
+                # Czarna kropka
                 assigned_group.add(dwg.circle(
                     center=(scale_x(pos_x), scale_y(pos_y)),
                     r=config.DOT_RADIUS,
-                    fill=config.TEXT_COLOR_ASSIGNED,
-                    opacity=0.5
+                    fill='#000000',  # czarny
+                    opacity=0.8,
+                    class_='text-marker',
+                    pointer_events='none'  # NIE klikalne
                 ))
                 
-                if config.SHOW_TEXT_LABELS:
-                    assigned_group.add(dwg.text(
-                        text['id'],
-                        insert=(scale_x(pos_x) + config.DOT_RADIUS*2, scale_y(pos_y)+config.TEXT_SIZE/2),
-                        fill=config.TEXT_COLOR_ASSIGNED,
-                        font_size=config.TEXT_SIZE,
-                        opacity=0.5
-                    ))
+            if config.SHOW_TEXT_LABELS:
+                assigned_group.add(dwg.text(
+                    text['id'],
+                    insert=(scale_x(pos_x) + size*2, scale_y(pos_y)+config.TEXT_SIZE/2),
+                    fill=config.TEXT_COLOR_ASSIGNED,
+                    font_size=config.TEXT_SIZE,
+                    opacity=0.5,
+                    pointer_events='none'  # NIE klikalne
+                ))
     
-    # Rysuj nieprzypisane teksty z poprawionymi rozmiarami
-    if config.SHOW_TEXT_DOTS:
+    # Rysuj nieprzypisane teksty - czarne kropki zamiast kolorowych
+    if config.SHOW_ELEMENT_POINTS:
         for text in unassigned_texts:
             pos_x, pos_y = text['pos']
+            # Czarna kropka
             unassigned_group.add(dwg.circle(
                 center=(scale_x(pos_x), scale_y(pos_y)),
                 r=config.DOT_RADIUS,
-                fill=config.TEXT_COLOR_UNASSIGNED,
-                opacity=0.5
+                fill='#000000',  # czarny
+                opacity=0.8,
+                class_='text-marker',
+                pointer_events='none'  # NIE klikalne
             ))
             
             if config.SHOW_TEXT_LABELS:
@@ -216,7 +229,8 @@ def generate_svg(inverter_data: Dict, texts: List, unassigned_texts: List, unass
                     insert=(scale_x(pos_x) + config.DOT_RADIUS*2, scale_y(pos_y)+config.TEXT_SIZE/2),
                     fill=config.TEXT_COLOR_UNASSIGNED,
                     opacity=0.5,
-                    font_size=config.TEXT_SIZE
+                    font_size=config.TEXT_SIZE,
+                    pointer_events='none'  # NIE klikalne
                 ))
     
     # Dodaj grupy do SVG
@@ -402,32 +416,38 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             line_element.attribs['data-assignment-group'] = segment_to_text[segment_id]
         assigned_group.add(line_element)
         
-        # Dodaj środek segmentu jeśli włączone
-        if config.SHOW_SEGMENT_CENTERS:
+        # Dodaj czarne kropki na środkach segmentów jeśli włączone
+        if config.SHOW_ELEMENT_POINTS:
             mid_x = (seg['start'][0] + seg['end'][0]) / 2
             mid_y = (seg['start'][1] + seg['end'][1]) / 2
             
-            assigned_group.add(dwg.circle(
+            circle_element = dwg.circle(
                 center=(scale_x(mid_x), scale_y(mid_y)),
-                r=config.DOT_RADIUS*0.6,  # Mniejsze kropki
-                fill=config.SEGMENT_CENTER_COLOR_ASSIGNED,
-                opacity=0.3  # Większa przejrzystość
-            ))
+                r=config.DOT_RADIUS,
+                fill='#000000',  # Czarne kropki
+                opacity=0.8,
+                class_='segment-marker',
+                pointer_events='none'  # NIE klikalne
+            )
+            assigned_group.add(circle_element)
+        
+        # Numery segmentów - kontrolowane osobnym togglem
+        if config.SHOW_ASSIGNED_SEGMENT_LABELS:
+            # Numer segmentu przy LEWEJ krawędzi
+            left_x = seg['start'][0]
+            left_y = seg['start'][1]
             
-            if config.SHOW_SEGMENT_LABELS:
-                # Numer segmentu przy LEWEJ krawędzi
-                # Użyj początku segmentu (start) jako lewej krawędzi
-                left_x = seg['start'][0]
-                left_y = seg['start'][1]
-                
-                assigned_group.add(dwg.text(
-                    f"#{segment_global_index}",
-                    insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE*0.25),
-                    text_anchor="start",  # Wyrównanie do lewej
-                    fill=config.TEXT_SEGMENT_COLOR,
-                    font_size=config.TEXT_SIZE*0.5,  # Mniejszy rozmiar
-                    opacity=0.5  # Większa przejrzystość
-                ))
+            label_element = dwg.text(
+                f"#{segment_global_index}",
+                insert=(scale_x(left_x), scale_y(left_y)+config.TEXT_SIZE*0.25),
+                text_anchor="start",
+                fill=config.TEXT_SEGMENT_COLOR,
+                font_size=config.TEXT_SIZE*0.5,
+                opacity=0.5,
+                class_='segment-label',
+                pointer_events='none'  # NIE klikalne
+            )
+            assigned_group.add(label_element)
         
         segment_global_index += 1
     
@@ -450,15 +470,19 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             if text_id in assigned_text_ids:
                 x, y = text_data['pos']
                 
-                circle_element = dwg.circle(
-                    center=(scale_x(x), scale_y(y)),
-                    r=config.DOT_RADIUS*0.7,  # Mniejsze kropki
-                    fill=config.TEXT_COLOR_ASSIGNED,
-                    opacity=0.3  # Większa przejrzystość
-                )
-                # Dodaj grupę przypisania do kropki tekstu
-                circle_element.attribs['data-assignment-group'] = text_id
-                assigned_group.add(circle_element)
+                # Czarne kropki dla tekstów (jeśli włączone)
+                if config.SHOW_ELEMENT_POINTS:
+                    circle_element = dwg.circle(
+                        center=(scale_x(x), scale_y(y)),
+                        r=config.DOT_RADIUS,
+                        fill='#000000',  # Czarna kropka
+                        opacity=0.8,
+                        class_='text-marker',
+                        pointer_events='none'  # NIE klikalne
+                    )
+                    # Dodaj grupę przypisania do kropki tekstu
+                    circle_element.attribs['data-assignment-group'] = text_id
+                    assigned_group.add(circle_element)
                 
                 # Znajdź przypisane segmenty dla tego tekstu i ich numery SVG
                 segment_numbers = []
@@ -536,26 +560,34 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
         line_element.attribs['data-svg-number'] = str(global_segment_number)
         unassigned_segments_group.add(line_element)
         
-        # Dodaj numer na środku segmentu - większy i czytelniejszy
+        # Czarne kropki na środkach segmentów (jeśli włączone)
         mid_x = (seg['start'][0] + seg['end'][0]) / 2
         mid_y = (seg['start'][1] + seg['end'][1]) / 2
         
-        unassigned_segments_group.add(dwg.circle(
-            center=(scale_x(mid_x), scale_y(mid_y)),
-            r=config.DOT_RADIUS*0.7,  # Mniejsze koło dla numeru
-            fill=config.UNASSIGNED_SEGMENT_COLOR,
-            opacity=0.4  # Większa przejrzystość
-        ))
+        if config.SHOW_ELEMENT_POINTS:
+            circle_element = dwg.circle(
+                center=(scale_x(mid_x), scale_y(mid_y)),
+                r=config.DOT_RADIUS,
+                fill='#000000',  # Czarna kropka
+                opacity=0.8,
+                class_='segment-marker',
+                pointer_events='none'  # NIE klikalne
+            )
+            unassigned_segments_group.add(circle_element)
 
-        # Używaj globalnego indeksu segmentu
-        unassigned_segments_group.add(dwg.text(
-            f"#{global_segment_number}",
-            insert=(scale_x(mid_x), scale_y(mid_y)+config.TEXT_SIZE*0.25),
-            text_anchor="middle",
-            fill=config.TEXT_SEGMENT_COLOR,
-            opacity=0.7,  # Większa przejrzystość
-            font_size=config.TEXT_SIZE*0.6,  # Mniejszy rozmiar
-        ))
+        # Numery segmentów - kontrolowane osobnym togglem
+        if config.SHOW_UNASSIGNED_SEGMENT_LABELS:
+            label_element = dwg.text(
+                f"#{global_segment_number}",
+                insert=(scale_x(mid_x), scale_y(mid_y)+config.TEXT_SIZE*0.25),
+                text_anchor="middle",
+                fill=config.TEXT_SEGMENT_COLOR,
+                opacity=0.7,
+                font_size=config.TEXT_SIZE*0.6,
+                class_='segment-label',
+                pointer_events='none'  # NIE klikalne
+            )
+            unassigned_segments_group.add(label_element)
         
         unassigned_count += 1
     
@@ -568,12 +600,18 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     unassigned_texts_count = 0
     for text_data in unassigned_texts:
         x, y = text_data['pos']
-        unassigned_texts_group.add(dwg.circle(
-            center=(scale_x(x), scale_y(y)),
-            r=config.DOT_RADIUS*0.8,  # Trochę większe niż przypisane
-            fill=config.TEXT_COLOR_UNASSIGNED,
-            opacity=0.7  # Więcej widoczne
-        ))
+        
+        # Czarne kropki dla nieprzypisanych tekstów (jeśli włączone)
+        if config.SHOW_ELEMENT_POINTS:
+            circle_element = dwg.circle(
+                center=(scale_x(x), scale_y(y)),
+                r=config.DOT_RADIUS,
+                fill='#000000',  # Czarna kropka
+                opacity=0.8,
+                class_='text-marker',
+                pointer_events='none'  # NIE klikalne
+            )
+            unassigned_texts_group.add(circle_element)
         
         # Format: ZIEB/F01/MPPT1/S01 (bez dodatkowego napisu - kolor już informuje)
         display_text = f"{text_data['id']}"

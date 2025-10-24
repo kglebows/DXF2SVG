@@ -29,6 +29,7 @@ try:
     from src.gui.simple_svg_viewer import SimpleSVGViewer
     from src.gui.enhanced_svg_viewer import EnhancedSVGViewer
     from src.interactive.assignment_manager import AssignmentManager
+    from src.gui.unified_config_tab import UnifiedConfigTab
 except ImportError as e:
     print(f"Błąd importu: {e}")
     sys.exit(1)
@@ -40,6 +41,68 @@ class InteractiveGUI:
     def __init__(self, config_file=None):
         self.root = tk.Tk()
         self.root.title("DXF2SVG - Interaktywny Edytor")
+        
+        # Ustaw ciemny motyw dla całego okna
+        self.colors = {
+            'bg': '#0d0d0d',           # Warstwa 0 - czarne tło
+            'layer1_bg': '#1a1a1a',    # Warstwa 1 - zakładki i ich zawartość
+            'layer2_bg': '#2d2d2d',    # Warstwa 2 - obszary (karty)
+            'layer3_bg': '#3a3a3a',    # Warstwa 3 - tooltips (najjaśniejsza)
+            'card_bg': '#2d2d2d',      # Alias dla kompatybilności
+            'input_bg': '#252525',
+            'button_bg': '#333333',
+            'button_hover': '#404040',
+            'text': '#e0e0e0',
+            'text_dim': '#a0a0a0',
+            'accent': '#4a9eff',
+            'accent_hover': '#5ab0ff',
+            'border': '#404040',
+        }
+        
+        self.root.configure(bg=self.colors['bg'])
+        
+        # Ustaw czarny pasek tytułowy (Windows)
+        try:
+            self.root.tk.call('::tk::unsupported::MacWindowStyle', 'style', self.root, 'dark')
+        except:
+            pass
+        
+        # Dla Windows 10/11 - ciemny pasek tytułowy i zaokrąglone rogi
+        try:
+            import ctypes
+            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+            DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+            DWMWA_WINDOW_CORNER_PREFERENCE = 33  # Windows 11
+            DWMWCP_ROUND = 2  # Zaokrąglone rogi
+            
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            
+            # Ciemny pasek tytułowy
+            value = ctypes.c_int(1)  # TRUE
+            try:
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                    ctypes.byref(value), ctypes.sizeof(value))
+            except:
+                # Fallback dla starszych wersji Windows 10
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                    ctypes.byref(value), ctypes.sizeof(value))
+            
+            # Zaokrąglone rogi (Windows 11)
+            try:
+                corner_value = ctypes.c_int(DWMWCP_ROUND)
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                    ctypes.byref(corner_value), ctypes.sizeof(corner_value))
+            except:
+                pass  # Windows 10 nie wspiera zaokrąglonych rogów
+                
+        except Exception as e:
+            print(f"Nie udało się ustawić stylu okna: {e}")
+        
+        self.setup_styles()
+        
         # Always start fullscreen/zoomed
         try:
             if sys.platform.startswith('win'):
@@ -82,6 +145,11 @@ class InteractiveGUI:
         # Opcje GUI
         self.auto_refresh_svg = tk.BooleanVar(value=True)  # Domyślnie włączone
         
+        # Zmienne dla usuniętej zakładki "Widok SVG" (kompatybilność wsteczna)
+        self.current_file_info = tk.StringVar(value="Plik: brak")
+        self.zoom_var = tk.StringVar(value="100%")
+        self.svg_info = tk.StringVar(value="Brak pliku SVG")
+        
         # Kontrola konwersji
         self.conversion_cancelled = False
         self.conversion_thread = None
@@ -106,63 +174,396 @@ class InteractiveGUI:
         self.load_default_files()
     
     def setup_styles(self):
-        """Konfiguracja stylów"""
+        """Konfiguracja stylów - ciemny motyw z warstwami (bez ramek)"""
         style = ttk.Style()
         
-        # Konfiguracja kolorów
-        style.configure('Title.TLabel', font=('Arial', 12, 'bold'))
-        style.configure('Success.TLabel', foreground='green')
-        style.configure('Error.TLabel', foreground='red')
-        style.configure('Info.TLabel', foreground='blue')
+        # Ciemny motyw jako bazę
+        style.theme_use('clam')
         
-        # Style przycisków
-        style.configure('Success.TButton', foreground='darkgreen', font=('Arial', 9, 'bold'))
+        # Główne tło - warstwa 0 (czarna)
+        style.configure('.', background=self.colors['bg'], 
+                       foreground=self.colors['text'],
+                       fieldbackground=self.colors['input_bg'])
+        
+        # Frame - warstwa 1
+        style.configure('TFrame', background=self.colors['layer1_bg'],
+                       borderwidth=0, relief=tk.FLAT)
+        style.configure('Card.TFrame', background=self.colors['layer2_bg'],
+                       borderwidth=0, relief=tk.FLAT)
+        
+        # Notebook (zakładki) - MAŁE, zaokrąglone, BEZ RAMEK, przezroczyste headery
+        style.configure('TNotebook', 
+                       background=self.colors['bg'],  # Warstwa 0 - czarna
+                       borderwidth=0,
+                       tabmargins=0,
+                       highlightthickness=0,
+                       relief=tk.FLAT)
+        
+        # KLUCZOWE: PUSTY LAYOUT = BEZ RAMEK (rozwiązanie ze StackOverflow)
+        style.layout('TNotebook', [])
+        style.configure('TNotebook', tabmargins=0)
+        
+        # Usuń padding wokół zawartości notebook
+        style.configure('TNotebook', padding=0)
+        
+        # Layout dla zakładek - MINIMALNY, BEZ ramek i focus ring
+        style.layout('TNotebook.Tab', [
+            ('Notebook.tab', {
+                'sticky': 'nswe',
+                'children': [
+                    ('Notebook.label', {'sticky': ''})
+                ]
+            })
+        ])
+        
+        style.configure('TNotebook.Tab', 
+                       background=self.colors['bg'],  # Niewybrane wtapiają się w tło
+                       foreground=self.colors['text_dim'],
+                       padding=[28, 12],  # ZWIĘKSZONE odstępy między zakładkami (było 20)
+                       font=('Segoe UI', 10),  # WIĘKSZA czcionka (było 9)
+                       borderwidth=0,
+                       highlightthickness=0,
+                       focuscolor='',
+                       lightcolor=self.colors['bg'],  # Usuń jasną ramkę
+                       darkcolor=self.colors['bg'],  # Usuń ciemną ramkę
+                       bordercolor=self.colors['bg'],  # Kolor ramki = tło
+                       relief=tk.FLAT)
+        style.map('TNotebook.Tab',
+                 background=[('selected', self.colors['layer1_bg']),  # Wybrana = kolor zawartości
+                           ('!selected', self.colors['bg'])],  # Niewybrana = czarne tło
+                 foreground=[('selected', self.colors['text']),
+                           ('!selected', self.colors['text_dim'])],
+                 lightcolor=[('selected', self.colors['layer1_bg']), ('!selected', self.colors['bg'])],
+                 darkcolor=[('selected', self.colors['layer1_bg']), ('!selected', self.colors['bg'])],
+                 bordercolor=[('selected', self.colors['layer1_bg']), ('!selected', self.colors['bg'])],
+                 borderwidth=[('selected', 0), ('!selected', 0)])
+        
+        # Labels
+        style.configure('TLabel', 
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       font=('Segoe UI', 9))
+        style.configure('Title.TLabel', 
+                       font=('Segoe UI', 14, 'bold'),
+                       foreground=self.colors['accent'])
+        style.configure('Success.TLabel', foreground='#4caf50')
+        style.configure('Error.TLabel', foreground='#f44336')
+        style.configure('Info.TLabel', foreground=self.colors['accent'])
+        
+        # Buttons
+        style.configure('TButton',
+                       background=self.colors['layer2_bg'],
+                       foreground=self.colors['text'],
+                       borderwidth=0,
+                       relief=tk.FLAT,
+                       font=('Segoe UI', 9))
+        style.map('TButton',
+                 background=[('active', self.colors['accent']),
+                           ('pressed', self.colors['accent'])],
+                 foreground=[('active', 'white')])
+        
+        # Combobox - ciemny styl BEZ RAMEK ale działający
+        # NIE używamy pustego layoutu!
+        style.configure('TCombobox',
+                       fieldbackground=self.colors['input_bg'],
+                       background=self.colors['layer2_bg'],
+                       foreground=self.colors['text'],
+                       borderwidth=0,
+                       arrowcolor=self.colors['text'],
+                       insertcolor=self.colors['text'],
+                       highlightthickness=0,
+                       relief=tk.FLAT)
+        style.map('TCombobox',
+                 fieldbackground=[('readonly', self.colors['input_bg'])],
+                 selectbackground=[('readonly', self.colors['accent'])],
+                 selectforeground=[('readonly', 'white')])
+        
+        # Scrollbar - ciemny styl BEZ RAMEK
+        style.configure('Vertical.TScrollbar',
+                       background=self.colors['layer2_bg'],
+                       troughcolor=self.colors['bg'],
+                       borderwidth=0,
+                       arrowcolor=self.colors['text'],
+                       relief=tk.FLAT)
+        style.map('Vertical.TScrollbar',
+                 background=[('active', self.colors['accent'])])
+        
+        # PanedWindow - BEZ RAMEK, minimalistyczny sash
+        style.configure('TPanedwindow', 
+                       background=self.colors['bg'],
+                       borderwidth=0,
+                       relief=tk.FLAT)
+        
+        # Sash (pasek przesuwania) - subtelny, minimalistyczny
+        style.configure('Sash',
+                       sashthickness=6,  # Cienki pasek
+                       background=self.colors['layer2_bg'],
+                       borderwidth=0,
+                       relief=tk.FLAT)
+        style.map('Sash',
+                 background=[('active', self.colors['accent'])])  # Podświetlenie przy hover
+        
+        # Labelframe - BEZ RAMEK (pusty layout dla zawartości)
+        style.layout('TLabelframe', [
+            ('Labelframe.border', {
+                'sticky': 'nswe',
+                'children': [
+                    ('Labelframe.label', {'side': 'top', 'sticky': 'w'}),
+                ]
+            })
+        ])
+        style.configure('TLabelframe', 
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       borderwidth=0,
+                       bordercolor=self.colors['layer1_bg'],
+                       lightcolor=self.colors['layer1_bg'],
+                       darkcolor=self.colors['layer1_bg'],
+                       relief=tk.FLAT)
+        style.configure('TLabelframe.Label',
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       font=('Segoe UI', 10, 'bold'))
+        
+        # Combobox - TRANSPARENT lub DOPASOWANE kolory ramek
+        try:
+            # Próba 1: transparent
+            style.configure('TCombobox',
+                           background=self.colors['layer1_bg'],
+                           foreground=self.colors['text'],
+                           fieldbackground=self.colors['layer1_bg'],
+                           selectbackground=self.colors['accent'],
+                           selectforeground=self.colors['text'],
+                           borderwidth=0,
+                           relief=tk.FLAT,
+                           lightcolor='',
+                           darkcolor='',
+                           bordercolor='',
+                           arrowcolor=self.colors['text'])
+            style.map('TCombobox',
+                     fieldbackground=[('readonly', self.colors['layer1_bg'])],
+                     selectbackground=[('readonly', self.colors['accent'])],
+                     lightcolor=[('focus', ''), ('!focus', '')],
+                     darkcolor=[('focus', ''), ('!focus', '')],
+                     bordercolor=[('focus', ''), ('!focus', '')])
+        except:
+            # Fallback: dopasuj do tła
+            style.configure('TCombobox',
+                           background=self.colors['layer1_bg'],
+                           foreground=self.colors['text'],
+                           fieldbackground=self.colors['layer1_bg'],
+                           selectbackground=self.colors['accent'],
+                           selectforeground=self.colors['text'],
+                           borderwidth=0,
+                           relief=tk.FLAT,
+                           lightcolor=self.colors['layer1_bg'],
+                           darkcolor=self.colors['layer1_bg'],
+                           bordercolor=self.colors['layer1_bg'],
+                           arrowcolor=self.colors['text'])
+            style.map('TCombobox',
+                     fieldbackground=[('readonly', self.colors['layer1_bg'])],
+                     selectbackground=[('readonly', self.colors['accent'])],
+                     lightcolor=[('focus', self.colors['layer1_bg']), ('!focus', self.colors['layer1_bg'])],
+                     darkcolor=[('focus', self.colors['layer1_bg']), ('!focus', self.colors['layer1_bg'])],
+                     bordercolor=[('focus', self.colors['layer1_bg']), ('!focus', self.colors['layer1_bg'])])
+        
+        # Card.TCombobox - specjalny styl dla unified_config_tab (warstwa 2 - ciemniejsza ramka)
+        try:
+            style.configure('Card.TCombobox',
+                           background=self.colors['layer2_bg'],
+                           foreground=self.colors['text'],
+                           fieldbackground=self.colors['layer2_bg'],
+                           selectbackground=self.colors['accent'],
+                           selectforeground=self.colors['text'],
+                           borderwidth=0,
+                           relief=tk.FLAT,
+                           lightcolor='',
+                           darkcolor='',
+                           bordercolor='',
+                           arrowcolor=self.colors['text'])
+            style.map('Card.TCombobox',
+                     fieldbackground=[('readonly', self.colors['layer2_bg'])],
+                     selectbackground=[('readonly', self.colors['accent'])],
+                     lightcolor=[('focus', ''), ('!focus', '')],
+                     darkcolor=[('focus', ''), ('!focus', '')],
+                     bordercolor=[('focus', ''), ('!focus', '')])
+        except:
+            style.configure('Card.TCombobox',
+                           background=self.colors['layer2_bg'],
+                           foreground=self.colors['text'],
+                           fieldbackground=self.colors['layer2_bg'],
+                           selectbackground=self.colors['accent'],
+                           selectforeground=self.colors['text'],
+                           borderwidth=0,
+                           relief=tk.FLAT,
+                           lightcolor=self.colors['layer2_bg'],
+                           darkcolor=self.colors['layer2_bg'],
+                           bordercolor=self.colors['layer2_bg'],
+                           arrowcolor=self.colors['text'])
+            style.map('Card.TCombobox',
+                     fieldbackground=[('readonly', self.colors['layer2_bg'])],
+                     selectbackground=[('readonly', self.colors['accent'])],
+                     lightcolor=[('focus', self.colors['layer2_bg']), ('!focus', self.colors['layer2_bg'])],
+                     darkcolor=[('focus', self.colors['layer2_bg']), ('!focus', self.colors['layer2_bg'])],
+                     bordercolor=[('focus', self.colors['layer2_bg']), ('!focus', self.colors['layer2_bg'])])
+        
+        # Entry - WARSTWA 2 dla ramek (ciemniejsza)
+        style.configure('TEntry',
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       fieldbackground=self.colors['layer1_bg'],
+                       borderwidth=0,
+                       relief=tk.FLAT,
+                       lightcolor=self.colors['layer2_bg'],
+                       darkcolor=self.colors['layer2_bg'],
+                       bordercolor=self.colors['layer2_bg'],
+                       insertcolor=self.colors['text'])
+        style.map('TEntry',
+                 lightcolor=[('focus', self.colors['accent']), ('!focus', self.colors['layer2_bg'])],
+                 darkcolor=[('focus', self.colors['accent']), ('!focus', self.colors['layer2_bg'])],
+                 bordercolor=[('focus', self.colors['accent']), ('!focus', self.colors['layer2_bg'])])
+        
+        # Radiobutton - BEZ ramek
+        style.configure('TRadiobutton',
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       font=('Segoe UI', 10),
+                       borderwidth=0,
+                       focuscolor='',
+                       indicatorcolor=self.colors['accent'],
+                       relief=tk.FLAT)
+        style.map('TRadiobutton',
+                 background=[('active', self.colors['layer1_bg'])],
+                 foreground=[('active', self.colors['accent'])])
+        
+        # Checkbutton - BEZ ramek
+        style.configure('TCheckbutton',
+                       background=self.colors['layer1_bg'],
+                       foreground=self.colors['text'],
+                       font=('Segoe UI', 10),
+                       borderwidth=0,
+                       focuscolor='',
+                       indicatorcolor=self.colors['accent'],
+                       relief=tk.FLAT)
+        style.map('TCheckbutton',
+                 background=[('active', self.colors['layer1_bg'])],
+                 foreground=[('active', self.colors['accent'])])
+        
+        # KOŃCOWY OVERRIDE - wymuszenie braku ramek na WSZYSTKICH elementach ttk
+        self.root.option_add('*borderWidth', 0)
+        self.root.option_add('*highlightThickness', 0)
+        self.root.option_add('*TNotebook*borderWidth', 0)
+        self.root.option_add('*TNotebook*highlightThickness', 0)
+        self.root.option_add('*TNotebook*relief', 'flat')
     
     def create_interface(self):
         """Tworzenie interfejsu użytkownika"""
-        # Główny kontener z możliwością zmiany szerokości paneli
+        # Główny kontener z możliwością zmiany szerokości paneli - minimalistyczny sash
         self.main_paned = ttk.PanedWindow(self.root, orient=tk.HORIZONTAL)
         self.main_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Panel lewy z zakładkami (sterowanie) - ramka z stałą szerokością początkową
-        self.control_frame = ttk.Frame(self.main_paned)
+        # Ustaw cienki, subtelny sash (pasek przesuwania)
+        try:
+            self.main_paned.configure(sashwidth=6)
+        except:
+            pass
+        
+        # Panel lewy z zakładkami (sterowanie) - stała szerokość początkowa 670px (480 + 40%)
+        self.control_frame = ttk.Frame(self.main_paned, width=670)
         self.main_paned.add(self.control_frame, weight=0)
         
         # Panel prawy (podgląd SVG)
         self.svg_frame = ttk.Frame(self.main_paned)
         self.main_paned.add(self.svg_frame, weight=1)
         
-        # Ustaw początkową pozycję podziału (380px dla panelu sterowania)
-        self.root.after(100, lambda: self.main_paned.sashpos(0, 380))
+        # Ustaw początkową pozycję podziału z większym opóźnieniem i retry
+        def set_sash_position(retry=0):
+            try:
+                self.main_paned.sashpos(0, 670)
+                # Sprawdź czy się ustawiło
+                if self.main_paned.sashpos(0) < 50 and retry < 3:
+                    self.root.after(200, lambda: set_sash_position(retry + 1))
+            except:
+                if retry < 3:
+                    self.root.after(200, lambda: set_sash_position(retry + 1))
+        
+        self.root.after(250, lambda: set_sash_position(0))
         
         # Utwórz zawartość paneli
         self.create_control_panel_with_tabs(self.control_frame)
         self.create_svg_panel(self.svg_frame)
     
     def create_control_panel_with_tabs(self, parent):
-        """Panel sterowania z zakładkami"""
-        # Tytuł
-        title_label = ttk.Label(parent, text="Panel Sterowania", style='Title.TLabel')
-        title_label.pack(pady=(0, 10))
+        """Panel sterowania z zakładkami (bez tytułu)"""
+        # Notebook dla zakładek - BEZPOŚREDNIO bez tytułu, BEZ RAMEK
+        self.notebook = ttk.Notebook(parent, style='TNotebook')
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
         
-        # Notebook dla zakładek
-        self.notebook = ttk.Notebook(parent)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
+        # AGRESYWNE USUNIĘCIE RAMEK - wszystkie możliwe sposoby
+        self.notebook.configure(padding=0)
         
-        # Zakładka 1: Pliki i Konwersja
-        self.create_files_tab()
+        # Bezpośrednie ustawienia na widget
+        try:
+            self.notebook['borderwidth'] = 0
+            self.notebook['highlightthickness'] = 0
+            self.notebook['relief'] = 'flat'
+        except:
+            pass
         
-        # Zakładka 2: Widok SVG
-        self.create_view_tab()
+        # Tkinter wewnętrzne opcje
+        try:
+            self.notebook.configure(borderwidth=0, highlightthickness=0, relief='flat')
+        except:
+            pass
         
-        # Zakładka 3: Tryb Interaktywny
+        # Opcje dla pane (obszaru zawartości)
+        self.root.option_add('*TNotebook*borderWidth', '0')
+        self.root.option_add('*TNotebook*highlightThickness', '0')
+        self.root.option_add('*TNotebook*relief', 'flat')
+        self.root.option_add('*TNotebook.client*borderWidth', '0')
+        self.root.option_add('*TNotebook.client*highlightThickness', '0')
+        
+        # Zakładka 1: Konfiguracja (zunifikowana - zastępuje stare zakładki 1 i 4)
+        self.create_unified_config_tab()
+        
+        # Zakładka 2: Tryb Interaktywny
         self.create_interactive_tab()
         
-        # Zakładka 4: Konfiguracja
-        self.create_config_tab()
-        
-        # Zakładka 5: Status i Logi
+        # Zakładka 3: Status i Logi
         self.create_status_tab()
+    
+    def create_unified_config_tab(self):
+        """Zunifikowana zakładka konfiguracji (zastępuje zakładki 1 i 4)"""
+        self.unified_config_tab = UnifiedConfigTab(
+            self.notebook, 
+            self.config_manager,
+            on_convert_callback=self.run_conversion_from_config
+        )
+        self.notebook.add(self.unified_config_tab, text="⚙️ Konfiguracja")
+        
+        # Podepnij progress i status z zakładki do głównego GUI
+        self.progress = self.unified_config_tab.progress
+        self.conversion_status_var = tk.StringVar()
+        # Połącz status_var z label
+        self.conversion_status_var.trace_add('write', 
+            lambda *args: self.unified_config_tab.status_label.config(
+                text=self.conversion_status_var.get(),
+                foreground='blue' if '🔄' in self.conversion_status_var.get() 
+                else 'green' if '✅' in self.conversion_status_var.get()
+                else 'orange' if '⚠️' in self.conversion_status_var.get()
+                else 'red' if '❌' in self.conversion_status_var.get()
+                else 'gray'
+            )
+        )
+        
+    def run_conversion_from_config(self, dxf_path: str, svg_path: str):
+        """Callback wywoływany z zakładki konfiguracji do uruchomienia konwersji"""
+        # Ustaw ścieżki
+        self.current_dxf_path.set(dxf_path)
+        self.current_svg_path.set(svg_path)
+        
+        # Uruchom konwersję
+        self.convert_and_analyze()
     
     def create_files_tab(self):
         """Zakładka: Pliki i Konwersja z integracją konfiguracji"""
@@ -344,10 +745,11 @@ class InteractiveGUI:
             # Rozpocznij konwersję
             self.processing = True
             self.conversion_cancelled = False  # Flaga anulowania
-            self.convert_button.config(state='disabled', text="Konwertowanie...")
-            self.cancel_button.config(state='normal')
-            self.conversion_status_var.set(f"🔄 Analizowanie pliku: {os.path.basename(dxf_file)}...")
-            self.progress.start()
+            # Status updates są opcjonalne - mogą nie istnieć w nowym GUI
+            if hasattr(self, 'conversion_status_var'):
+                self.conversion_status_var.set(f"🔄 Analizowanie pliku: {os.path.basename(dxf_file)}...")
+            if hasattr(self, 'progress'):
+                self.progress.start()
             
             # Uruchom konwersję w osobnym wątku
             def conversion_thread():
@@ -395,39 +797,44 @@ class InteractiveGUI:
         except Exception as e:
             self.log_error(f"Błąd rozpoczęcia konwersji: {e}")
             self.processing = False
-            self.convert_button.config(state='normal', text="🔄 Konwertuj i Analizuj")
-            self.cancel_button.config(state='disabled')
-            self.progress.stop()
+            # convert_button i cancel_button są w unified_config_tab
+            if hasattr(self, 'progress'):
+                self.progress.stop()
     
     def cancel_conversion(self):
         """Anuluj trwającą konwersję"""
         if self.processing:
             self.conversion_cancelled = True
             self.log_warning("⚠️ Anulowanie konwersji...")
-            self.conversion_status_var.set("⚠️ Anulowanie...")
+            if hasattr(self, 'conversion_status_var'):
+                self.conversion_status_var.set("⚠️ Anulowanie...")
     
     def on_conversion_cancelled(self):
         """Obsłuż anulowaną konwersję"""
         self.processing = False
-        self.convert_button.config(state='normal', text="🔄 Konwertuj i Analizuj")
-        self.cancel_button.config(state='disabled')
-        self.progress.stop()
-        self.conversion_status_var.set("⚠️ Konwersja anulowana")
+        if hasattr(self, 'progress'):
+            self.progress.stop()
+        if hasattr(self, 'conversion_status_var'):
+            self.conversion_status_var.set("⚠️ Konwersja anulowana")
+        if hasattr(self, 'unified_config_tab'):
+            self.unified_config_tab.convert_btn.config(state='normal')
         self.log_warning("Konwersja została anulowana przez użytkownika")
     
     def on_conversion_complete(self, conversion_data):
         """Obsłuż zakończenie konwersji"""
         self.processing = False
-        self.convert_button.config(state='normal', text="🔄 Konwertuj i Analizuj")
-        self.cancel_button.config(state='disabled')
-        self.progress.stop()
+        if hasattr(self, 'progress'):
+            self.progress.stop()
+        if hasattr(self, 'unified_config_tab'):
+            self.unified_config_tab.convert_btn.config(state='normal')
         
         if conversion_data and not self.conversion_cancelled:
             # Zapisz dane konwersji
             self.last_conversion_data = conversion_data
             
             dxf_file = self.config_manager.get('DEFAULT_DXF_FILE', 'input.dxf')
-            self.conversion_status_var.set(f"✅ Konwersja zakończona - {os.path.basename(dxf_file)}")
+            if hasattr(self, 'conversion_status_var'):
+                self.conversion_status_var.set(f"✅ Konwersja zakończona - {os.path.basename(dxf_file)}")
             self.log_success(f"✅ Konwersja pliku {dxf_file} zakończona pomyślnie")
             
             # Aktualizuj informacje o trybie interaktywnym
@@ -452,10 +859,12 @@ class InteractiveGUI:
     def on_conversion_error(self, error_msg):
         """Obsłuż błąd konwersji"""
         self.processing = False
-        self.convert_button.config(state='normal', text="🔄 Konwertuj i Analizuj")
-        self.cancel_button.config(state='disabled')
-        self.progress.stop()
-        self.conversion_status_var.set("❌ Błąd konwersji")
+        if hasattr(self, 'progress'):
+            self.progress.stop()
+        if hasattr(self, 'unified_config_tab'):
+            self.unified_config_tab.convert_btn.config(state='normal')
+        if hasattr(self, 'conversion_status_var'):
+            self.conversion_status_var.set("❌ Błąd konwersji")
         dxf_file = self.config_manager.get('DEFAULT_DXF_FILE', 'input.dxf')
         self.log_error(f"❌ Błąd konwersji pliku {dxf_file}: {error_msg}")
         messagebox.showerror("Błąd konwersji", f"Wystąpił błąd podczas konwersji pliku {os.path.basename(dxf_file)}:\n{error_msg}")
@@ -518,158 +927,234 @@ class InteractiveGUI:
         info_label.pack(anchor=tk.W)
     
     def create_interactive_tab(self):
-        """Zakładka: Tryb Interaktywny"""
+        """Zakładka: Tryb Interaktywny - uproszczona bez zbędnych nagłówków"""
         interactive_frame = ttk.Frame(self.notebook)
-        self.notebook.add(interactive_frame, text="Tryb Interaktywny")
+        self.notebook.add(interactive_frame, text="🔧 Tryb Interaktywny")
         
-        # Sekcja uruchamiania
-        launch_section = ttk.LabelFrame(interactive_frame, text="Uruchomienie", padding=10)
-        launch_section.pack(fill=tk.X, pady=(5, 10), padx=10)
+        # BEZ sekcji "Uruchomienie" - od razu lista tekstów
+        # Główna ramka (bez tytułu)
+        main_frame = tk.Frame(interactive_frame, bg=self.colors['layer1_bg'])
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Przycisk uruchomienia trybu interaktywnego
-        self.interactive_button = ttk.Button(launch_section, 
-                                           text="🔧 Uruchom Edytor Przypisań", 
-                                           command=self.start_interactive_mode,
-                                           state='disabled')
-        self.interactive_button.pack(fill=tk.X, pady=(0, 5))
-        
-        # Informacje o stanie
-        self.interactive_info = tk.StringVar(value="Brak danych do edycji")
-        info_label = ttk.Label(launch_section, textvariable=self.interactive_info,
-                              style='Info.TLabel', font=('Arial', 9), wraplength=300)
-        info_label.pack(anchor=tk.W)
-        
-        # Status nieprzypisanych tekstów
+        # Status nieprzypisanych tekstów (na górze)
         self.unassigned_status = tk.StringVar(value="")
-        status_label = ttk.Label(launch_section, textvariable=self.unassigned_status,
-                               style='Error.TLabel', font=('Arial', 9))
-        status_label.pack(anchor=tk.W, pady=(5, 0))
-
-        # Sekcja przypisywania (ukryta domyślnie) - bez scrollowania, od góry
-        self.assignment_section = ttk.LabelFrame(interactive_frame, text="Przypisywanie", padding=10)
-        self.assignment_section.pack(fill=tk.BOTH, expand=True, pady=(0, 10), padx=10)
-        self.assignment_section.pack_forget()  # Ukryj na początku
+        status_label = tk.Label(main_frame, textvariable=self.unassigned_status,
+                               bg=self.colors['layer1_bg'],
+                               fg=self.colors['accent'],
+                               font=('Segoe UI', 10, 'bold'))
+        status_label.pack(anchor=tk.W, pady=(0, 10))
         
-        # Lista wszystkich tekstów (nieprzypisane na czerwono)
+        # Informacje o stanie (jeśli potrzebne)
+        self.interactive_info = tk.StringVar(value="")
+        info_label = tk.Label(main_frame, textvariable=self.interactive_info,
+                             bg=self.colors['layer1_bg'],
+                             fg=self.colors['text_dim'],
+                             font=('Segoe UI', 9))
+        info_label.pack(anchor=tk.W, pady=(0, 10))
+        
+        # Lista tekstów (BEZ tytułu sekcji)
         self.texts_label = tk.StringVar(value="Wszystkie teksty (🟢 przypisane, 🔴 nieprzypisane):")
-        ttk.Label(self.assignment_section, textvariable=self.texts_label).pack(anchor=tk.W)
+        tk.Label(main_frame, textvariable=self.texts_label,
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 10)).pack(anchor=tk.W, pady=(0, 5))
         
         # Frame dla listy tekstów i przycisku wyboru
-        texts_frame = ttk.Frame(self.assignment_section)
-        texts_frame.pack(fill=tk.X, pady=2)
+        texts_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        texts_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.texts_listbox = tk.Listbox(texts_frame, height=5, selectmode=tk.SINGLE)
+        # Frame dla listy tekstów i przycisku wyboru
+        texts_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        texts_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.texts_listbox = tk.Listbox(texts_frame, height=5, selectmode=tk.SINGLE,
+                                       bg=self.colors['input_bg'],
+                                       fg=self.colors['text'],
+                                       selectbackground=self.colors['accent'],
+                                       selectforeground='white',
+                                       relief=tk.FLAT,
+                                       borderwidth=0,
+                                       highlightthickness=1,
+                                       highlightcolor=self.colors['layer2_bg'],
+                                       highlightbackground=self.colors['layer2_bg'],
+                                       font=('Segoe UI', 9))
         self.texts_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.texts_listbox.bind('<<ListboxSelect>>', self.on_text_select)
-        self.texts_listbox.bind('<Double-Button-1>', self.on_text_double_click)  # Podwójne kliknięcie
+        self.texts_listbox.bind('<Double-Button-1>', self.on_text_double_click)
         
-        # Przycisk wyboru tekstu
-        select_text_btn = ttk.Button(texts_frame, text="Wybierz\nTekst", 
-                                   command=self.select_text, width=8)
-        select_text_btn.pack(side=tk.RIGHT, padx=(5, 0))
-        
-        # Lista wszystkich segmentów (nieprzypisane na czerwono)
+        # Lista segmentów (BEZ tytułu sekcji)
         self.segments_label = tk.StringVar(value="Wszystkie segmenty (🟢 przypisane, 🔴 nieprzypisane):")
-        ttk.Label(self.assignment_section, textvariable=self.segments_label).pack(anchor=tk.W, pady=(10,0))
+        tk.Label(main_frame, textvariable=self.segments_label,
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 10)).pack(anchor=tk.W, pady=(0, 5))
         
-        # Frame dla listy segmentów i przycisku wyboru
-        segments_frame = ttk.Frame(self.assignment_section)
-        segments_frame.pack(fill=tk.X, pady=2)
+        # Frame dla listy segmentów
+        segments_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        segments_frame.pack(fill=tk.X, pady=(0, 15))
         
-        self.segments_listbox = tk.Listbox(segments_frame, height=5, selectmode=tk.SINGLE)
+        # Frame dla listy segmentów
+        segments_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        segments_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        self.segments_listbox = tk.Listbox(segments_frame, height=5, selectmode=tk.SINGLE,
+                                          bg=self.colors['input_bg'],
+                                          fg=self.colors['text'],
+                                          selectbackground=self.colors['accent'],
+                                          selectforeground='white',
+                                          relief=tk.FLAT,
+                                          borderwidth=0,
+                                          highlightthickness=1,
+                                          highlightcolor=self.colors['layer2_bg'],
+                                          highlightbackground=self.colors['layer2_bg'],
+                                          font=('Segoe UI', 9))
         self.segments_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.segments_listbox.bind('<<ListboxSelect>>', self.on_segment_select)
-        self.segments_listbox.bind('<Double-Button-1>', self.on_segment_double_click)  # Podwójne kliknięcie
+        self.segments_listbox.bind('<Double-Button-1>', self.on_segment_double_click)
         
-        # Przycisk wyboru segmentu
-        select_segment_btn = ttk.Button(segments_frame, text="Wybierz\nSegment", 
-                                      command=self.select_segment, width=8)
-        select_segment_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        # NOWE: Prawy przycisk myszy - szybkie przypisanie BEZ potwierdzenia (jak mechanizm SVG)
+        self.segments_listbox.bind('<Button-3>', self.quick_assign_right_click)
         
         # Separator
-        ttk.Separator(self.assignment_section, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
-        # Sekcja zapamiętanych wyborów
-        selection_frame = ttk.LabelFrame(self.assignment_section, text="Zapamiętane wybory", padding=5)
-        selection_frame.pack(fill=tk.X, pady=(0, 10))
+        # Wyświetlanie zapamiętanych wyborów (BEZ LabelFrame)
+        tk.Label(main_frame, text="Zapamiętane wybory:",
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 10, 'bold')).pack(anchor=tk.W, pady=(0, 5))
         
-        # Główny kontener dla kolumn
-        columns_frame = ttk.Frame(selection_frame)
-        columns_frame.pack(fill=tk.X)
+        columns_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        columns_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        columns_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        columns_frame.pack(fill=tk.X, pady=(0, 10))
         
         # Lewa kolumna - Teksty
-        text_column = ttk.Frame(columns_frame)
-        text_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        text_column = tk.Frame(columns_frame, bg=self.colors['layer1_bg'])
+        text_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
         
-        ttk.Label(text_column, text="📝 Wybrany tekst:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
+        tk.Label(text_column, text="📝 Wybrany tekst:",
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 9, 'bold')).pack(anchor=tk.W)
         self.stored_text_info = tk.StringVar(value="❌ Brak wybranego tekstu")
-        ttk.Label(text_column, textvariable=self.stored_text_info,
-                 font=('Arial', 8), wraplength=150).pack(anchor=tk.W, pady=(2, 5))
-        
-        ttk.Button(text_column, text="Wyczyść tekst", 
-                  command=self.clear_selected_text, width=15).pack(anchor=tk.W)
+        tk.Label(text_column, textvariable=self.stored_text_info,
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text_dim'],
+                font=('Segoe UI', 8), wraplength=200).pack(anchor=tk.W, pady=(2, 0))
         
         # Prawa kolumna - Segmenty  
-        segment_column = ttk.Frame(columns_frame)
-        segment_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        segment_column = tk.Frame(columns_frame, bg=self.colors['layer1_bg'])
+        segment_column.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        ttk.Label(segment_column, text="🔗 Wybrany segment:", font=('Arial', 9, 'bold')).pack(anchor=tk.W)
+        tk.Label(segment_column, text="🔗 Wybrany segment:",
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 9, 'bold')).pack(anchor=tk.W)
         self.stored_segment_info = tk.StringVar(value="❌ Brak wybranego segmentu")
-        ttk.Label(segment_column, textvariable=self.stored_segment_info,
-                 font=('Arial', 8), wraplength=150).pack(anchor=tk.W, pady=(2, 5))
+        tk.Label(segment_column, textvariable=self.stored_segment_info,
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text_dim'],
+                font=('Segoe UI', 8), wraplength=200).pack(anchor=tk.W, pady=(2, 0))
         
-        # Przyciski dla segmentu w jednym rzędzie
-        segment_buttons_frame = ttk.Frame(segment_column)
-        segment_buttons_frame.pack(anchor=tk.W)
+        # Separator
+        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
         
-        ttk.Button(segment_buttons_frame, text="Wyczyść segment", 
-                  command=self.clear_selected_segment, width=13).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(segment_buttons_frame, text="🧹 Wyczyść przypisania", 
-                  command=self.clear_selected_segment_assignments, width=16).pack(side=tk.LEFT)
+        # Przyciski akcji (BEZ LabelFrame "Akcje")
+        tk.Label(main_frame, text="Akcje:",
+                bg=self.colors['layer1_bg'],
+                fg=self.colors['text'],
+                font=('Segoe UI', 10, 'bold')).pack(anchor=tk.W, pady=(0, 10))
         
-        # Sekcja akcji - podzielona na rzędy
-        actions_section = ttk.LabelFrame(self.assignment_section, text="Akcje", padding=5)
-        actions_section.pack(fill=tk.X, pady=5)
+        # Pomocnicza funkcja do tworzenia przycisków z tooltipami
+        def create_action_btn(parent, text, command, tooltip, **kwargs):
+            btn = ttk.Button(parent, text=text, command=command, **kwargs)
+            btn.pack(side=tk.LEFT, padx=(0,5))
+            if hasattr(self, 'unified_config_tab') and self.unified_config_tab:
+                self.unified_config_tab.create_tooltip(btn, tooltip)
+            return btn
         
-        # Pierwszy rząd - podstawowe akcje
-        action_frame1 = ttk.Frame(actions_section)
+        # Rząd 1 - Podstawowe operacje
+        action_frame1 = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
         action_frame1.pack(fill=tk.X, pady=(0, 5))
         
-        ttk.Button(action_frame1, text="Przypisz", 
-                  command=self.assign_text_to_segment).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame1, text="Pomiń tekst", 
-                  command=self.skip_text).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame1, text="🗑️ Usuń", 
-                  command=self.remove_text_segment_assignment).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame1, text="🧹 Wyczyść segment", 
-                  command=self.clear_segment_assignments).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame1, text="� Odśwież SVG", 
-                  command=self.regenerate_and_refresh_svg).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame1, text="Zapisz zmiany", 
-                  command=self.save_assignments).pack(side=tk.RIGHT)
+        create_action_btn(action_frame1, "✅ Przypisz Tekst", 
+                         self.assign_text_to_segment,
+                         "Przypisuje zaznaczony tekst do zaznaczonej linii.\n" +
+                         "SKRÓT: Zaznacz tekst i linię, następnie kliknij PRAWYM przyciskiem myszy na liście linii.")
+        create_action_btn(action_frame1, "🗑️ Wyczyść Linię", 
+                         self.clear_segment_assignments,
+                         "Usuwa wszystkie teksty przypisane do zaznaczonej linii.\n" +
+                         "Linia zostaje wyczyszczona i może przyjąć nowe przypisania.")
+        create_action_btn(action_frame1, "❌ Wyczyść Wybór", 
+                         self.clear_selected_text,
+                         "Czyści aktualnie zapamiętany wybór tekstu i linii.\n" +
+                         "Resetuje formularz do stanu początkowego.")
         
-        # Drugi rząd - narzędzia i generowanie
-        action_frame2 = ttk.Frame(actions_section)
-        action_frame2.pack(fill=tk.X, pady=(0, 5))
+        # Separator
+        ttk.Separator(main_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=15)
         
-        ttk.Button(action_frame2, text="Mapa numerów", 
-                  command=self.show_segment_numbers_map).pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame2, text="📁 Structured SVG", 
-                  command=self.generate_final_structured_svg, style='Success.TButton').pack(side=tk.LEFT, padx=(0,5))
-        ttk.Button(action_frame2, text="📊 Statystyki", 
-                  command=self.show_assignment_statistics).pack(side=tk.LEFT, padx=(0,5))
+        # DUŻY PRZYCISK: Generuj Structured SVG (podobny do przycisku Analiza)
+        gen_svg_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        gen_svg_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Opcja auto-odświeżania w tym samym rzędzie
-        ttk.Checkbutton(action_frame2, text="🔄 Auto-odświeżanie", 
-                       variable=self.auto_refresh_svg, 
-                       command=self.on_auto_refresh_change).pack(side=tk.RIGHT)
+        # Tworzenie dużego przycisku z Canvas (jak przycisk Konwertuj)
+        self.generate_svg_canvas = tk.Canvas(gen_svg_frame, height=50,
+                                            bg=self.colors['layer1_bg'],
+                                            highlightthickness=0, borderwidth=0)
+        self.generate_svg_canvas.pack(fill=tk.X)
         
-        # Trzeci rząd - zarządzanie danymi  
-        action_frame3 = ttk.Frame(actions_section)
-        action_frame3.pack(fill=tk.X)
+        def draw_generate_btn():
+            width = self.generate_svg_canvas.winfo_width() if self.generate_svg_canvas.winfo_width() > 1 else 600
+            self.generate_svg_canvas.delete('all')
+            from src.gui.unified_config_tab import create_rounded_rectangle
+            self.gen_svg_rect = create_rounded_rectangle(
+                self.generate_svg_canvas, 0, 0, width, 50, radius=25,
+                fill='#4caf50', outline='', width=0)  # Zielony jak sukces
+            self.gen_svg_text = self.generate_svg_canvas.create_text(
+                width//2, 25, text="📁 Generuj Structured SVG (FINAŁ)",
+                fill='white', font=('Segoe UI', 12, 'bold'))
         
-        ttk.Button(action_frame3, text="⟲ Załaduj od nowa", 
-                  command=self.reload_data_fresh).pack(side=tk.LEFT, padx=(0,5))
+        # Hover effects
+        def on_gen_enter(e):
+            self.generate_svg_canvas.itemconfig(self.gen_svg_rect, fill='#66bb6a')
+            self.generate_svg_canvas.config(cursor='hand2')
+        def on_gen_leave(e):
+            self.generate_svg_canvas.itemconfig(self.gen_svg_rect, fill='#4caf50')
+            self.generate_svg_canvas.config(cursor='')
+        def on_gen_click(e):
+            self.generate_final_structured_svg()
+        
+        self.generate_svg_canvas.bind('<Configure>', lambda e: draw_generate_btn())
+        self.generate_svg_canvas.bind('<Enter>', on_gen_enter)
+        self.generate_svg_canvas.bind('<Leave>', on_gen_leave)
+        self.generate_svg_canvas.bind('<Button-1>', on_gen_click)
+        self.generate_svg_canvas.after(50, draw_generate_btn)
+        
+        # Tooltip dla dużego przycisku
+        if hasattr(self, 'unified_config_tab') and self.unified_config_tab:
+            self.unified_config_tab.create_tooltip(
+                self.generate_svg_canvas,
+                "GENERUJE FINALNY STRUCTURED SVG\n\n" +
+                "Tworzy końcowy plik SVG z wszystkimi przypisaniami tekstów do linii.\n" +
+                "Ten plik zawiera grupowane elementy (I01-I04) i jest gotowy do użycia.\n\n" +
+                "Upewnij się że wszystkie potrzebne przypisania zostały wykonane przed generowaniem.")
+        
+        # Dodatkowo: przyciski pomocnicze w małym rzędzie
+        utils_frame = tk.Frame(main_frame, bg=self.colors['layer1_bg'])
+        utils_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        create_action_btn(utils_frame, "📊 Statystyki", 
+                         self.show_assignment_statistics,
+                         "Wyświetla szczegółowe statystyki przypisań:\n" +
+                         "- Liczba przypisanych tekstów\n" +
+                         "- Liczba nieprzypisanych tekstów\n" +
+                         "- Liczba linii z przypisaniami")
+        create_action_btn(utils_frame, "🗺️ Mapa numerów", 
+                         self.show_segment_numbers_map,
+                         "Pokazuje mapę wszystkich numerów segmentów/linii.\n" +
+                         "Pomaga w identyfikacji linii w pliku DXF.")
     
     def create_config_tab(self):
         """Tworzy zakładkę konfiguracji za pomocą ConfigTab"""
@@ -680,39 +1165,179 @@ class InteractiveGUI:
         self.config_tab = ConfigTab(config_tab_frame, self.config_manager)
 
     def create_status_tab(self):
-        """Zakładka: Status i Logi"""
+        """Zakładka: Status i Logi - ciemny motyw z zaokrągleniami"""
         status_frame = ttk.Frame(self.notebook)
-        self.notebook.add(status_frame, text="Status i Logi")
+        self.notebook.add(status_frame, text="📊 Status i Logi")
         
-        # Status
-        status_section = ttk.LabelFrame(status_frame, text="Status", padding=10)
-        status_section.pack(fill=tk.X, pady=(5, 10))
+        # Status - CANVAS z zaokrąglonym tłem (warstwa 2)
+        status_outer = tk.Frame(status_frame, bg=self.colors['layer1_bg'])
+        status_outer.pack(fill=tk.X, padx=15, pady=(10, 5))
+        
+        status_canvas = tk.Canvas(status_outer, height=80,
+                                 bg=self.colors['layer1_bg'],
+                                 highlightthickness=0, borderwidth=0)
+        status_canvas.pack(fill=tk.X)
+        
+        # Rysuj zaokrąglone tło
+        def draw_status_bg(event=None):
+            width = status_canvas.winfo_width() if status_canvas.winfo_width() > 1 else 600
+            status_canvas.delete('bg')
+            from src.gui.unified_config_tab import create_rounded_rectangle
+            create_rounded_rectangle(status_canvas, 0, 0, width, 80, radius=16,
+                                   fill=self.colors['layer2_bg'], outline='', width=0,
+                                   tags='bg')
+        
+        status_canvas.bind('<Configure>', draw_status_bg)
+        status_canvas.after(50, draw_status_bg)
+        
+        # Zawartość na Canvas
+        status_inner = tk.Frame(status_canvas, bg=self.colors['layer2_bg'])
+        status_canvas.create_window(15, 10, window=status_inner, anchor='nw')
+        
+        status_title = tk.Label(status_inner, text="Status", 
+                               bg=self.colors['layer2_bg'],
+                               fg=self.colors['text'],
+                               font=('Segoe UI', 11, 'bold'))
+        status_title.pack(anchor=tk.W, pady=(0, 5))
         
         self.status_var = tk.StringVar(value="Gotowy")
-        status_label = ttk.Label(status_section, textvariable=self.status_var)
+        status_label = tk.Label(status_inner, textvariable=self.status_var,
+                               bg=self.colors['layer2_bg'],
+                               fg=self.colors['accent'],
+                               font=('Segoe UI', 10))
         status_label.pack(anchor=tk.W)
         
-        # Logi
-        log_section = ttk.LabelFrame(status_frame, text="Logi", padding=10)
-        log_section.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        # Logi - CANVAS z zaokrąglonym tłem (warstwa 2)
+        log_outer = tk.Frame(status_frame, bg=self.colors['layer1_bg'])
+        log_outer.pack(fill=tk.BOTH, expand=True, padx=15, pady=(5, 10))
         
-        self.log_text = scrolledtext.ScrolledText(log_section, height=20, wrap=tk.WORD)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+        log_canvas = tk.Canvas(log_outer, 
+                              bg=self.colors['layer1_bg'],
+                              highlightthickness=0, borderwidth=0)
+        log_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Rysuj zaokrąglone tło
+        def draw_log_bg(event=None):
+            width = log_canvas.winfo_width() if log_canvas.winfo_width() > 1 else 600
+            height = log_canvas.winfo_height() if log_canvas.winfo_height() > 1 else 400
+            log_canvas.delete('bg')
+            from src.gui.unified_config_tab import create_rounded_rectangle
+            create_rounded_rectangle(log_canvas, 0, 0, width, height, radius=16,
+                                   fill=self.colors['layer2_bg'], outline='', width=0,
+                                   tags='bg')
+        
+        log_canvas.bind('<Configure>', draw_log_bg)
+        log_canvas.after(50, draw_log_bg)
+        
+        # Zawartość na Canvas
+        log_inner = tk.Frame(log_canvas, bg=self.colors['layer2_bg'])
+        log_canvas.create_window(15, 10, window=log_inner, anchor='nw')
+        
+        # Dostosuj rozmiar wewnętrznej ramki do canvas
+        def resize_log_inner(event=None):
+            canvas_width = log_canvas.winfo_width()
+            canvas_height = log_canvas.winfo_height()
+            if canvas_width > 1 and canvas_height > 1:
+                log_inner.config(width=canvas_width - 30, height=canvas_height - 20)
+        log_canvas.bind('<Configure>', lambda e: (draw_log_bg(e), resize_log_inner(e)))
+        
+        log_title = tk.Label(log_inner, text="Logi", 
+                            bg=self.colors['layer2_bg'],
+                            fg=self.colors['text'],
+                            font=('Segoe UI', 11, 'bold'))
+        log_title.pack(anchor=tk.W, pady=(0, 5))
+        
+        self.log_text = scrolledtext.ScrolledText(log_inner, wrap=tk.WORD,
+                                                  bg=self.colors['input_bg'],
+                                                  fg=self.colors['text'],
+                                                  insertbackground=self.colors['text'],
+                                                  relief=tk.FLAT,
+                                                  borderwidth=0,
+                                                  highlightthickness=1,
+                                                  highlightcolor=self.colors['layer2_bg'],
+                                                  highlightbackground=self.colors['layer2_bg'],
+                                                  font=('Consolas', 9))
+        self.log_text.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
     
     def create_svg_panel(self, parent):
-        """Panel podglądu SVG po prawej stronie"""
-        svg_frame = ttk.LabelFrame(parent, text="Podgląd SVG - Enhanced Assignment", padding=5)
-        svg_frame.pack(fill=tk.BOTH, expand=True)
+        """Panel podglądu SVG - SVG viewer z własnym wbudowanym toolbarem"""
+        # Główny kontener
+        main_container = ttk.Frame(parent)
+        main_container.pack(fill=tk.BOTH, expand=True)
         
-        # Enhanced SVG Viewer with assignment callback
-        self.svg_viewer = EnhancedSVGViewer(svg_frame)
+        # Enhanced SVG Viewer with assignment callback (ma własny toolbar wewnątrz)
+        self.svg_viewer = EnhancedSVGViewer(main_container)
         
         # Set assignment callback
         self.svg_viewer.set_assignment_callback(self.on_svg_assignment_made)
         
+        # Dodaj przyciski trybu do toolbara SVG viewera
+        self.add_mode_buttons_to_svg_viewer()
+        
         # Also keep simple viewer as backup
         self.simple_svg_viewer = None
     
+    def add_mode_buttons_to_svg_viewer(self):
+        """Dodaj przyciski trybu (📊 Strukturalny / 🔧 Assignment) do toolbara SVG viewera"""
+        if not hasattr(self.svg_viewer, 'mode_buttons_frame'):
+            return
+        
+        mode_frame = self.svg_viewer.mode_buttons_frame
+        
+        # Użyj funkcji z SVG viewera
+        if not hasattr(self.svg_viewer, 'create_round_icon_button'):
+            return
+        
+        create_btn = self.svg_viewer.create_round_icon_button
+        create_tooltip = self.svg_viewer.create_tooltip_func
+        colors = self.svg_viewer.toolbar_colors
+        
+        # Przyciski trybu z tooltipami
+        self.btn_structured = create_btn(
+            mode_frame, "📊", None,
+            "Tryb Strukturalny\nWyświetla SVG z pogrupowanymi\nelementami (I01-I04)",
+            is_toggle=True, toggle_value="structured")
+        
+        self.btn_assignment = create_btn(
+            mode_frame, "🔧", None,
+            "Tryb Assignment\nEdytor przypisań -\nłącz teksty z liniami",
+            is_toggle=True, toggle_value="interactive")
+        
+        # Dodaj obsługę kliknięć dla przycisków trybu
+        def on_structured_click(event):
+            self.current_display_mode.set("structured")
+            self.change_display_mode()
+            update_toggle_buttons()
+        
+        def on_assignment_click(event):
+            self.current_display_mode.set("interactive")
+            self.change_display_mode()
+            update_toggle_buttons()
+        
+        # Usuń stare bindingi i dodaj nowe
+        self.btn_structured.unbind('<Button-1>')
+        self.btn_assignment.unbind('<Button-1>')
+        self.btn_structured.bind('<Button-1>', on_structured_click)
+        self.btn_assignment.bind('<Button-1>', on_assignment_click)
+        
+        # Funkcja aktualizacji toggles
+        def update_toggle_buttons():
+            current = self.current_display_mode.get()
+            if current == "structured":
+                self.btn_structured.itemconfig(self.btn_structured.circle, fill=colors['accent'])
+                self.btn_structured.itemconfig(self.btn_structured.icon_id, fill='white')
+                self.btn_assignment.itemconfig(self.btn_assignment.circle, fill=colors['button_bg'])
+                self.btn_assignment.itemconfig(self.btn_assignment.icon_id, fill=colors['text'])
+            else:
+                self.btn_assignment.itemconfig(self.btn_assignment.circle, fill=colors['accent'])
+                self.btn_assignment.itemconfig(self.btn_assignment.icon_id, fill='white')
+                self.btn_structured.itemconfig(self.btn_structured.circle, fill=colors['button_bg'])
+                self.btn_structured.itemconfig(self.btn_structured.icon_id, fill=colors['text'])
+        
+        # Inicjalna aktualizacja
+        mode_frame.after(100, update_toggle_buttons)
+    
+
     # Metody obsługi plików
     def select_dxf_file(self):
         """Wybór pliku DXF"""
@@ -794,11 +1419,12 @@ class InteractiveGUI:
     def _conversion_complete(self, success, message):
         """Zakończenie konwersji"""
         self.processing = False
-        self.convert_button.configure(state='normal')
-        self.progress.stop()
+        if hasattr(self, 'progress'):
+            self.progress.stop()
         
         if success:
-            self.status_var.set("Gotowy")
+            if hasattr(self, 'status_var'):
+                self.status_var.set("Gotowy")
             self.log_message(message)
             
             # Aktualizuj informacje o trybie interaktywnym
@@ -1108,11 +1734,9 @@ class InteractiveGUI:
             unassigned_texts_count = len(self.last_conversion_data.get('unassigned_texts', []))
             unassigned_segments_count = len(self.last_conversion_data.get('unassigned_segments', []))
             
-            # Przycisk zawsze dostępny - mogą być błędne przypisania do poprawienia
-            self.interactive_button.configure(state='normal')
-            
+            # Zakładka zawsze dostępna
             if unassigned_texts_count > 0 or unassigned_segments_count > 0:
-                self.interactive_info.set(f"Edytor przypisań dostępny")
+                self.interactive_info.set(f"Edytor przypisań gotowy do pracy")
                 status_parts = []
                 if unassigned_texts_count > 0:
                     status_parts.append(f"{unassigned_texts_count} nieprzypisanych tekstów")
@@ -1120,11 +1744,10 @@ class InteractiveGUI:
                     status_parts.append(f"{unassigned_segments_count} nieprzypisanych segmentów")
                 self.unassigned_status.set(f"⚠️ {', '.join(status_parts)}")
             else:
-                self.interactive_info.set("Edytor przypisań dostępny")
-                self.unassigned_status.set("✅ Wszystko przypisane - można sprawdzić i poprawić")
+                self.interactive_info.set("Wszystko przypisane - można sprawdzić i poprawić")
+                self.unassigned_status.set("✅ Wszystkie elementy przypisane")
         else:
-            self.interactive_button.configure(state='disabled')
-            self.interactive_info.set("Brak danych do edycji")
+            self.interactive_info.set("Brak danych - wykonaj konwersję DXF")
             self.unassigned_status.set("")
     
     def start_interactive_mode(self):
@@ -1186,11 +1809,10 @@ class InteractiveGUI:
             self.populate_texts_list()
             self.populate_segments_list()
             
-            # Pokaż sekcję przypisywania
-            self.assignment_section.pack(fill=tk.BOTH, expand=True, pady=(0, 10), padx=10)
+            # Zakładka jest zawsze widoczna (bez sekcji assignment_section)
             
             # Przełącz na zakładkę trybu interaktywnego
-            self.notebook.select(2)  # Zakładka "Tryb Interaktywny"
+            self.notebook.select(1)  # Zakładka "Tryb Interaktywny" (była 2, teraz 1 po usunięciu "Widok SVG")
             
             # Przełącz widok na interactive
             self.current_display_mode.set("interactive")
@@ -1553,6 +2175,134 @@ class InteractiveGUI:
             self.log_message("🎯 Gotowy do przypisania! Naciśnij przycisk 'Przypisz'")
             # Tu można dodać kolorowanie przycisku jeśli potrzeba
     
+    def quick_assign_on_right_click(self, event):
+        """Szybkie przypisanie prawym przyciskiem myszy - bez okna potwierdzenia - WZOROWANE NA assign_text_to_segment"""
+        # Sprawdź czy mamy zaznaczony tekst i segment
+        if not self.stored_text_data or not self.stored_segment_data:
+            self.log_message("⚠️ Najpierw wybierz tekst i segment używając przycisków 'Wybierz'")
+            return  # Nic nie rób jeśli brak wyborów
+        
+        if not self.assignment_manager:
+            self.log_error("❌ AssignmentManager nie jest zainicjalizowany!")
+            return
+        
+        # Pobierz dane z zapamiętanych wyborów (TAK JAK W assign_text_to_segment)
+        selected_text = self.stored_text_data
+        selected_segment = self.stored_segment_data
+        
+        text_id = selected_text.get('id')
+        segment_id = selected_segment.get('id')
+        
+        self.log_message(f"🚀 Szybkie przypisanie (PPM): {text_id} -> Segment #{segment_id}")
+        
+        # Sprawdź statusy elementów (TAK JAK W assign_text_to_segment)
+        text_was_unassigned = text_id in {t.get('id') for t in self.assignment_manager.unassigned_texts}
+        segment_was_unassigned = segment_id in {s.get('id') for s in self.assignment_manager.unassigned_segments}
+        
+        self.log_message(f"Status: Tekst {'nieprzypisany' if text_was_unassigned else 'przypisany'}, Segment {'nieprzypisany' if segment_was_unassigned else 'przypisany'}")
+        
+        # Wykonaj przypisanie BEZ potwierdzenia (to jest główna różnica - brak messagebox.askyesno)
+        try:
+            result = self.assignment_manager.assign_text_to_segment(text_id, segment_id)
+            if result['success']:
+                # Aktualizuj lokalne dane GUI z AssignmentManager (TAK JAK W assign_text_to_segment)
+                self.assigned_data = self.assignment_manager.current_assigned_data
+                self.unassigned_texts = self.assignment_manager.unassigned_texts
+                self.unassigned_segments = self.assignment_manager.unassigned_segments
+                self.assignment_changes = self.assignment_manager.assignment_changes
+                
+                action_type = "Przepisano" if result['was_reassignment'] else "Przypisano"
+                self.log_success(f"✅ {action_type} (szybkie PPM) {text_id} -> segment #{segment_id}")
+                
+                # Loguj usunięte przypisania
+                for removed in result.get('removed_assignments', []):
+                    self.log_message(f"🗑️ Usunięto {removed}")
+                
+                # Odśwież listy (pokaże zmiany kolorów)
+                self.populate_texts_list()
+                self.populate_segments_list()
+                
+                # Wyczyść zapamiętane wybory
+                self.clear_selected_text()
+                self.clear_selected_segment()
+                
+                # Wyczyść zaznaczenia w listboxach
+                self.texts_listbox.selection_clear(0, tk.END)
+                self.segments_listbox.selection_clear(0, tk.END)
+                
+                # Zawsze odśwież SVG po przypisaniu (dla natychmiastowego feedbacku)
+                self.regenerate_and_refresh_svg()
+                
+                # Aktualizuj status
+                self.unassigned_status.set(
+                    f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, " +
+                    f"{len(self.unassigned_segments)} nieprzypisanych segmentów")
+            else:
+                self.log_error(f"❌ Szybkie przypisanie nie powiodło się: {result['message']}")
+        except Exception as e:
+            self.log_error(f"❌ Błąd szybkiego przypisania: {e}")
+    
+    def quick_assign_right_click(self, event):
+        """Szybkie przypisanie PPM - bezpośrednio przez AssignmentManager (jak SVG viewer)"""
+        # Sprawdź czy mamy zaznaczony tekst i segment
+        if not self.stored_text_data or not self.stored_segment_data:
+            self.log_message("⚠️ PPM: Najpierw wybierz tekst i segment")
+            return
+        
+        if not self.assignment_manager:
+            self.log_error("❌ PPM: AssignmentManager nie jest zainicjalizowany!")
+            return
+        
+        # Pobierz dane
+        text_id = self.stored_text_data.get('id')
+        segment_id = self.stored_segment_data.get('id')
+        
+        self.log_message(f"🖱️ PPM: Przypisanie {text_id} -> Segment #{segment_id}")
+        
+        try:
+            # Wykonaj przypisanie BEZ potwierdzenia (bezpośrednio przez AssignmentManager)
+            result = self.assignment_manager.assign_text_to_segment(text_id, segment_id)
+            
+            if result['success']:
+                # Aktualizuj lokalne dane GUI z AssignmentManager
+                self.assigned_data = self.assignment_manager.current_assigned_data
+                self.unassigned_texts = self.assignment_manager.unassigned_texts
+                self.unassigned_segments = self.assignment_manager.unassigned_segments
+                self.assignment_changes = self.assignment_manager.assignment_changes
+                
+                action_type = "Przepisano" if result['was_reassignment'] else "Przypisano"
+                self.log_success(f"✅ PPM: {action_type} {text_id} -> segment #{segment_id}")
+                
+                # Loguj usunięte przypisania
+                for removed in result.get('removed_assignments', []):
+                    self.log_message(f"🗑️ PPM: Usunięto {removed}")
+                
+                # Odśwież listy (pokaże zmiany kolorów)
+                self.populate_texts_list()
+                self.populate_segments_list()
+                
+                # Wyczyść zapamiętane wybory
+                self.clear_selected_text()
+                self.clear_selected_segment()
+                
+                # Wyczyść zaznaczenia w listboxach
+                self.texts_listbox.selection_clear(0, tk.END)
+                self.segments_listbox.selection_clear(0, tk.END)
+                
+                # Zawsze odśwież SVG po przypisaniu
+                self.regenerate_and_refresh_svg()
+                
+                # Aktualizuj status
+                self.unassigned_status.set(
+                    f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, " +
+                    f"{len(self.unassigned_segments)} nieprzypisanych segmentów")
+                
+            else:
+                self.log_error(f"❌ PPM: {result['message']}")
+                
+        except Exception as e:
+            self.log_error(f"❌ PPM: Błąd przypisania: {e}")
+    
     def assign_text_to_segment(self):
         """Przypisanie tekstu do segmentu używając zapamiętanych wyborów - UMOŻLIWIA PRZEPISYWANIE"""
         if not self.stored_text_data or not self.stored_segment_data:
@@ -1578,7 +2328,7 @@ class InteractiveGUI:
         
         self.log_message(f"Status: Tekst {'nieprzypisany' if text_was_unassigned else 'przypisany'}, Segment {'nieprzypisany' if segment_was_unassigned else 'przypisany'}")
         
-        # Potwierdź przepisanie jeśli element był już przypisany
+        # Potwierdź przepisanie jeśli element był już przypisany (TYLKO dla przycisku, nie dla PPM)
         if not text_was_unassigned or not segment_was_unassigned:
             msg = f"UWAGA: Przepisujesz przypisania!\n\n"
             if not text_was_unassigned:
