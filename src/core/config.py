@@ -134,6 +134,15 @@ CLUSTER_DISTANCE_THRESHOLD = 300.0
 MARGIN = 2.0  # Margines dla SVG
 MAX_DISTANCE = 10.0  # Maksymalna odległość dla automatycznego przypisania
 
+# Nowe parametry edytora interaktywnego
+SHOW_ELEMENT_POINTS = False  # Pokazuj wszystkie kropki i trójkąty
+SHOW_ASSIGNED_SEGMENT_LABELS = True  # Pokazuj numery segmentów przypisanych
+SHOW_UNASSIGNED_SEGMENT_LABELS = True  # Pokazuj numery segmentów nieprzypisanych
+SELECTED_SEGMENT_COLOR = "#FFFF00"  # Żółty dla zaznaczonego segmentu
+SELECTED_TEXT_COLOR = "#00FFFF"  # Cyan dla zaznaczonego tekstu
+HOVER_SEGMENT_COLOR = "#FFB6C1"  # Jasny różowy dla segmentów w grupie (hover)
+HOVER_TEXT_COLOR = "#8B008B"  # Ciemny fioletowy dla tekstów w grupie (hover)
+
 def print_format_info():
     """Wyświetl informacje o dostępnych formatach tekstu"""
     logger.info("Wyświetlanie informacji o formatach tekstów")

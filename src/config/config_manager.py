@@ -70,6 +70,15 @@ class ConfigManager:
             'TEXT_OPACITY': config.TEXT_OPACITY,
             'STRING_LABEL_OFFSET': config.STRING_LABEL_OFFSET,
             
+            # Nowe parametry edytora interaktywnego
+            'SHOW_ELEMENT_POINTS': config.SHOW_ELEMENT_POINTS,
+            'SHOW_ASSIGNED_SEGMENT_LABELS': config.SHOW_ASSIGNED_SEGMENT_LABELS,
+            'SHOW_UNASSIGNED_SEGMENT_LABELS': config.SHOW_UNASSIGNED_SEGMENT_LABELS,
+            'SELECTED_SEGMENT_COLOR': config.SELECTED_SEGMENT_COLOR,
+            'SELECTED_TEXT_COLOR': config.SELECTED_TEXT_COLOR,
+            'HOVER_SEGMENT_COLOR': config.HOVER_SEGMENT_COLOR,
+            'HOVER_TEXT_COLOR': config.HOVER_TEXT_COLOR,
+            
             # Inne parametry
             'MPTT_HEIGHT': config.MPTT_HEIGHT,
             'SEGMENT_MIN_WIDTH': config.SEGMENT_MIN_WIDTH,
@@ -180,6 +189,10 @@ class ConfigManager:
                 'segment_center_color_unassigned': str(self.config_data.get('SEGMENT_CENTER_COLOR_UNASSIGNED', '#FF7B00')),
                 'text_color_assigned': str(self.config_data.get('TEXT_COLOR_ASSIGNED', '#00FF15')),
                 'text_color_unassigned': str(self.config_data.get('TEXT_COLOR_UNASSIGNED', '#FF0000')),
+                'selected_segment_color': str(self.config_data.get('SELECTED_SEGMENT_COLOR', '#FFFF00')),
+                'selected_text_color': str(self.config_data.get('SELECTED_TEXT_COLOR', '#00FFFF')),
+                'hover_segment_color': str(self.config_data.get('HOVER_SEGMENT_COLOR', '#FFB6C1')),
+                'hover_text_color': str(self.config_data.get('HOVER_TEXT_COLOR', '#8B008B')),
             }
             
             # Sekcja plików
@@ -201,6 +214,9 @@ class ConfigManager:
                 'string_label_offset': str(self.config_data.get('STRING_LABEL_OFFSET', 0)),
                 'mptt_height': str(self.config_data.get('MPTT_HEIGHT', 1)),
                 'segment_min_width': str(self.config_data.get('SEGMENT_MIN_WIDTH', 0)),
+                'show_element_points': str(self.config_data.get('SHOW_ELEMENT_POINTS', False)),
+                'show_assigned_segment_labels': str(self.config_data.get('SHOW_ASSIGNED_SEGMENT_LABELS', True)),
+                'show_unassigned_segment_labels': str(self.config_data.get('SHOW_UNASSIGNED_SEGMENT_LABELS', True)),
             }
             
             # Sekcja zaawansowanego formatowania

@@ -46,7 +46,7 @@ class EnhancedSVGViewer:
         
         # Performance optimizations
         self.viewport_buffer = 100  # Zwiększony buffer dla lepszego renderowania
-        self.max_elements_per_frame = 5000  # Zwiększony limit elementów
+        self.max_elements_per_frame = 999999  # Renderuj wszystkie elementy bez limitu
         self.render_cache = {}
         self.last_render_params = None
         self.needs_full_render = True
@@ -125,26 +125,222 @@ class EnhancedSVGViewer:
         self.setup_event_bindings()
         
     def create_toolbar(self):
-        """Create toolbar with controls"""
-        toolbar = ttk.Frame(self.main_frame)
-        toolbar.pack(fill=tk.X, pady=(0, 5))
+        """Create toolbar with controls - NOWY PASEK Z IKONAMI I TOOLTIPAMI"""
+        # Ciemny motyw kolorów (zgodny z interactive_gui_new.py)
+        colors = {
+            'layer1_bg': '#1a1a1a',
+            'layer2_bg': '#2d2d2d',
+            'layer3_bg': '#3a3a3a',
+            'button_bg': '#333333',
+            'button_hover': '#404040',
+            'button_disabled': '#262626',
+            'text_disabled': '#666666',
+            'accent': '#4a9eff',
+            'accent_hover': '#5ab0ff',
+            'text': '#e0e0e0',
+            'border': '#404040'
+        }
         
-        # Zoom controls
-        ttk.Button(toolbar, text="Fit to Window", command=self.fit_to_window).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(toolbar, text="Zoom In", command=self.zoom_in).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(toolbar, text="Zoom Out", command=self.zoom_out).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(toolbar, text="Reset View", command=self.reset_view).pack(side=tk.LEFT, padx=(0, 5))
+        # Toolbar z zaokrąglonym tłem (warstwa 1)
+        toolbar_container = tk.Frame(self.main_frame, bg=colors['layer1_bg'])
+        toolbar_container.pack(fill=tk.X, padx=5, pady=(5, 5))
+        
+        # Canvas dla zaokrąglonego tła
+        toolbar_canvas = tk.Canvas(toolbar_container, height=60,
+                                   bg=colors['layer1_bg'],
+                                   highlightthickness=0, borderwidth=0)
+        toolbar_canvas.pack(fill=tk.X)
+        
+        # Rysuj zaokrąglone tło toolbara
+        def draw_toolbar_bg(event=None):
+            toolbar_canvas.delete('toolbar_bg')
+            width = toolbar_canvas.winfo_width()
+            height = 60
+            if width > 1:
+                from src.gui.unified_config_tab import create_rounded_rectangle
+                create_rounded_rectangle(toolbar_canvas, 0, 0, width, height,
+                                       radius=16,
+                                       fill=colors['layer1_bg'],
+                                       outline='', width=0,
+                                       tags='toolbar_bg')
+        
+        toolbar_canvas.bind('<Configure>', draw_toolbar_bg)
+        toolbar_canvas.after(50, draw_toolbar_bg)
+        
+        # Frame wewnętrzny na przyciskach (na Canvas)
+        toolbar = tk.Frame(toolbar_canvas, bg=colors['layer1_bg'], height=50)
+        toolbar_canvas.create_window(5, 5, window=toolbar, anchor='nw', width=990)
+        
+        # Kontener wewnętrzny
+        toolbar_inner = tk.Frame(toolbar, bg=colors['layer1_bg'])
+        toolbar_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        # Pomocnicza funkcja do prostego tooltipu
+        def create_tooltip(widget, text):
+            """Tworzy prosty tooltip dla widgetu"""
+            tooltip = None
+            timeout_id = None
+            
+            def show_tooltip(event):
+                nonlocal tooltip
+                if tooltip:
+                    return
+                
+                # Użyj pozycji kursora z eventu dla Canvas
+                x = event.x_root + 10
+                y = event.y_root + 10
+                
+                tooltip = tk.Toplevel(widget)
+                tooltip.wm_overrideredirect(True)
+                tooltip.wm_geometry(f"+{x}+{y}")
+                
+                label = tk.Label(tooltip, text=text, 
+                               bg=colors['layer3_bg'], 
+                               fg=colors['text'],
+                               relief=tk.SOLID, 
+                               borderwidth=1,
+                               font=('Segoe UI', 9),
+                               padx=5, pady=3)
+                label.pack()
+            
+            def schedule_tooltip(event):
+                nonlocal timeout_id
+                timeout_id = widget.after(500, lambda: show_tooltip(event))
+            
+            def hide_tooltip(event):
+                nonlocal tooltip, timeout_id
+                if timeout_id:
+                    widget.after_cancel(timeout_id)
+                    timeout_id = None
+                if tooltip:
+                    tooltip.destroy()
+                    tooltip = None
+            
+            widget.bind('<Enter>', schedule_tooltip)
+            widget.bind('<Leave>', hide_tooltip)
+        
+        # Pomocnicza funkcja do tworzenia okrągłych przycisków z ikonami
+        def create_round_icon_button(parent, icon, command, tooltip_text, is_toggle=False, toggle_value=None):
+            """Tworzy okrągły przycisk tylko z ikoną"""
+            btn_canvas = tk.Canvas(parent, width=40, height=40,
+                                  bg=colors['layer1_bg'],
+                                  highlightthickness=0, borderwidth=0)
+            btn_canvas.pack(side=tk.LEFT, padx=3)
+            
+            # Rysuj okrąg
+            circle = btn_canvas.create_oval(2, 2, 38, 38,
+                                           fill=colors['button_bg'],
+                                           outline='', width=0)
+            # Ikona - dla emoji używaj anchor='center' zamiast pozycji tekstowej
+            icon_id = btn_canvas.create_text(20, 20, text=icon,
+                                            fill=colors['text'],
+                                            font=('Segoe UI', 16),
+                                            anchor='center')
+            
+            # Przechowuj elementy dla update
+            btn_canvas.circle = circle
+            btn_canvas.icon_id = icon_id
+            btn_canvas.toggle_value = toggle_value
+            btn_canvas.is_toggle = is_toggle
+            
+            # Kliknięcie
+            if command:
+                btn_canvas.bind('<Button-1>', lambda e: command())
+            
+            # Hover
+            def on_enter(event):
+                btn_canvas.itemconfig(circle, fill=colors['button_hover'])
+                btn_canvas.config(cursor='hand2')
+            
+            def on_leave(event):
+                btn_canvas.itemconfig(circle, fill=colors['button_bg'])
+                btn_canvas.config(cursor='')
+            
+            btn_canvas.bind('<Enter>', on_enter)
+            btn_canvas.bind('<Leave>', on_leave)
+            
+            # Tooltip
+            if tooltip_text:
+                create_tooltip(btn_canvas, tooltip_text)
+            
+            return btn_canvas
+        
+        # LEWO: Przyciski trybu SVG (będą kontrolowane z głównego GUI)
+        mode_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        mode_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Placeholder dla przycisków trybu - zostaną dodane przez główne GUI
+        self.mode_buttons_frame = mode_frame
+        self.toolbar_colors = colors  # Udostępnij kolory dla głównego GUI
+        self.create_round_icon_button = create_round_icon_button  # Udostępnij funkcję
+        self.create_tooltip_func = create_tooltip  # Udostępnij funkcję tooltip
+        
+        # Separator
+        sep = tk.Frame(toolbar_inner, bg=colors['border'], width=2)
+        sep.pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        
+        # ŚRODEK: Zoom controls
+        zoom_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        zoom_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        create_round_icon_button(zoom_frame, "🔍", self.fit_to_window, 
+                                "Dopasuj do okna\nAutomatycznie skaluje widok SVG")
+        create_round_icon_button(zoom_frame, "➕", self.zoom_in, 
+                                "Powiększ\nZwiększa zoom o 25%")
+        create_round_icon_button(zoom_frame, "➖", self.zoom_out, 
+                                "Pomniejsz\nZmniejsza zoom o 25%")
+        create_round_icon_button(zoom_frame, "🏠", self.reset_view, 
+                                "Reset widoku\nPrzywraca początkową pozycję")
         
         # Zoom level display
-        self.zoom_label = ttk.Label(toolbar, text="100%")
-        self.zoom_label.pack(side=tk.LEFT, padx=(10, 0))
+        self.zoom_label = tk.Label(toolbar_inner, text="100%",
+                                   bg=colors['layer1_bg'],
+                                   fg=colors['text'],
+                                   font=('Segoe UI', 10))
+        self.zoom_label.pack(side=tk.LEFT, padx=10)
         
-        # Assignment controls
-        self.create_assignment_controls(toolbar)
+        # Separator
+        sep2 = tk.Frame(toolbar_inner, bg=colors['border'], width=2)
+        sep2.pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
-        # Selection info
-        self.selection_label = ttk.Label(toolbar, text="No selection")
-        self.selection_label.pack(side=tk.RIGHT)
+        # PRAWO: Assignment controls
+        assignment_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        assignment_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Przypisz Tekst
+        self.assign_btn_canvas = create_round_icon_button(
+            assignment_frame, "✅",
+            self.assign_text_to_line,
+            "Przypisz Tekst\nKliknij tekst, potem linię,\nnaciśnij przycisk")
+        self.assign_btn = self.assign_btn_canvas  # Zachowaj referencję
+        
+        # Wyczyść Linię
+        self.clear_line_btn_canvas = create_round_icon_button(
+            assignment_frame, "🗑️",
+            self.clear_line_assignments,
+            "Wyczyść Linię\nUsuwa wszystkie przypisania\ndla wybranej linii")
+        self.clear_line_btn = self.clear_line_btn_canvas  # Zachowaj referencję
+        
+        # Wyczyść Wybór
+        create_round_icon_button(
+            assignment_frame, "❌",
+            self.clear_assignment_selection,
+            "Wyczyść Wybór\nUsuwa aktualny wybór\ntekstu i linii")
+        
+        # Instructions / status
+        self.instruction_label = tk.Label(toolbar_inner,
+                                         text="Kliknij tekst, potem linię, naciśnij ✅",
+                                         bg=colors['layer2_bg'],
+                                         fg=colors['text'],
+                                         font=('Segoe UI', 9, 'italic'))
+        self.instruction_label.pack(side=tk.RIGHT, padx=10)
+        
+        # Selection info na końcu (prawy róg)
+        self.selection_label = tk.Label(toolbar_inner, text="",
+                                        bg=colors['layer2_bg'],
+                                        fg=colors['text'],
+                                        font=('Segoe UI', 9))
+        self.selection_label.pack(side=tk.RIGHT, padx=10)
         
     def setup_event_bindings(self):
         """Setup event bindings for interactions"""
@@ -360,6 +556,21 @@ class EnhancedSVGViewer:
         if not self.svg_content:
             return
         
+        # Save current selection state BEFORE clearing
+        selected_text_group = None  # data-assignment-group dla tekstu
+        selected_line_segment_id = None  # data-segment-id dla linii
+        
+        if self.selected_text_element:
+            selected_text_group = self.selected_text_element.assigned_group
+            if not selected_text_group:
+                # Fallback: użyj content tekstu
+                selected_text_group = self.selected_text_element.svg_data.get('content', '')
+        
+        if self.selected_line_element:
+            # Dla segmentów użyj data-segment-id lub data-svg-number
+            attrs = self.selected_line_element.svg_data.get('attributes', {})
+            selected_line_segment_id = attrs.get('data-segment-id') or attrs.get('data-svg-number')
+        
         # Parse SVG
         try:
             root = ET.fromstring(self.svg_content)
@@ -401,23 +612,36 @@ class EnhancedSVGViewer:
                             # Parse assignment group from data-assignment-group attribute
                             assignment_group = elem.get('data-assignment-group', None)
                             
-                            # Create interactive element
-                            interactive_elem = InteractiveElement(
-                                element_id=elem.get('id', f"{element_type}_{elements_rendered}"),
-                                element_type=element_type,
-                                bounds=bounds,
-                                canvas_id=canvas_id,
-                                svg_data={
-                                    'element': elem,
-                                    'content': elem.text or '',
-                                    'attributes': dict(elem.attrib)
-                                }
-                            )
-                            # Ustaw grupę przypisania jeśli istnieje
-                            if assignment_group:
-                                interactive_elem.assigned_group = assignment_group
+                            # TYLKO line, polyline i text są klikalne (segmenty i teksty)
+                            # rect i circle (kropki, trójkąty) są renderowane ale NIE dodawane do interactive_elements
+                            # Wykluczamy również text elementy z class='segment-label' lub class='text-marker'
+                            is_clickable = element_type in ['line', 'polyline', 'text']
                             
-                            self.interactive_elements[canvas_id] = interactive_elem
+                            # Dodatkowe filtrowanie dla text - wykluczaj etykiety
+                            if element_type == 'text':
+                                elem_class = elem.get('class', '')
+                                if 'segment-label' in elem_class or 'text-marker' in elem_class:
+                                    is_clickable = False
+                            
+                            if is_clickable:
+                                # Create interactive element
+                                interactive_elem = InteractiveElement(
+                                    element_id=elem.get('id', f"{element_type}_{elements_rendered}"),
+                                    element_type=element_type,
+                                    bounds=bounds,
+                                    canvas_id=canvas_id,
+                                    svg_data={
+                                        'element': elem,
+                                        'content': elem.text or '',
+                                        'attributes': dict(elem.attrib)
+                                    }
+                                )
+                                # Ustaw grupę przypisania jeśli istnieje
+                                if assignment_group:
+                                    interactive_elem.assigned_group = assignment_group
+                                
+                                self.interactive_elements[canvas_id] = interactive_elem
+                            
                             elements_rendered += 1
                             
                 except Exception as e:
@@ -425,6 +649,31 @@ class EnhancedSVGViewer:
         
         # Update scroll region
         self.update_scroll_region()
+        
+        # RESTORE selection state after re-rendering
+        self.selected_text_element = None
+        self.selected_line_element = None
+        
+        if selected_text_group or selected_line_segment_id:
+            for canvas_id, elem in self.interactive_elements.items():
+                # Restore text selection - dopasuj po assigned_group lub content
+                if selected_text_group and elem.element_type == 'text':
+                    if elem.assigned_group == selected_text_group:
+                        self.selected_text_element = elem
+                        self.set_element_style(elem, 'selected')
+                    elif not elem.assigned_group:
+                        # Fallback: dopasuj po content
+                        if elem.svg_data.get('content', '') == selected_text_group:
+                            self.selected_text_element = elem
+                            self.set_element_style(elem, 'selected')
+                
+                # Restore line selection - dopasuj po data-segment-id
+                if selected_line_segment_id and elem.element_type in ['line', 'polyline']:
+                    attrs = elem.svg_data.get('attributes', {})
+                    seg_id = attrs.get('data-segment-id') or attrs.get('data-svg-number')
+                    if seg_id == selected_line_segment_id:
+                        self.selected_line_element = elem
+                        self.set_element_style(elem, 'selected')
         
         # Display render info
         self.display_render_info(elements_rendered)
@@ -664,7 +913,8 @@ class EnhancedSVGViewer:
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
         
-        print(f"Click: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
+        # DEBUG: Odkomentuj poniższą linię żeby debugować kliknięcia
+        # print(f"Click: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
         
         # Try to find elements in increasingly larger areas
         clicked_element = None
@@ -733,8 +983,8 @@ class EnhancedSVGViewer:
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
         
-        # DEBUG: Pokaż współrzędne i znalezione elementy
-        print(f"Mouse: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
+        # DEBUG: Odkomentuj poniższe linie żeby debugować współrzędne
+        # print(f"Mouse: widget({event.x}, {event.y}) -> canvas({canvas_x}, {canvas_y})")
         
         # Try to find elements in increasingly larger areas
         found_element = None
@@ -742,22 +992,22 @@ class EnhancedSVGViewer:
         # First try: small area around cursor
         items = self.canvas.find_overlapping(canvas_x - 3, canvas_y - 3, 
                                              canvas_x + 3, canvas_y + 3)
-        print(f"  Small area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
+        # print(f"  Small area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
         for item in items:
             if item in self.interactive_elements:
                 found_element = self.interactive_elements[item]
-                print(f"  Found: {found_element.element_type} id={found_element.element_id}")
+                # print(f"  Found: {found_element.element_type} id={found_element.element_id}")
                 break
         
         # Second try: larger area if nothing found
         if not found_element:
             items = self.canvas.find_overlapping(canvas_x - 10, canvas_y - 10, 
                                                  canvas_x + 10, canvas_y + 10)
-            print(f"  Large area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
+            # print(f"  Large area: {len(items)} items, interactive: {sum(1 for i in items if i in self.interactive_elements)}")
             for item in items:
                 if item in self.interactive_elements:
                     found_element = self.interactive_elements[item]
-                    print(f"  Found: {found_element.element_type} id={found_element.element_id}")
+                    # print(f"  Found: {found_element.element_type} id={found_element.element_id}")
                     break
         
         # Third try: use find_closest as fallback
@@ -765,7 +1015,7 @@ class EnhancedSVGViewer:
             closest = self.canvas.find_closest(canvas_x, canvas_y, halo=15)
             if closest and closest[0] in self.interactive_elements:
                 found_element = self.interactive_elements[closest[0]]
-                print(f"  Closest: {found_element.element_type} id={found_element.element_id}")
+                # print(f"  Closest: {found_element.element_type} id={found_element.element_id}")
         
         # Handle hover state
         if found_element:
@@ -781,8 +1031,9 @@ class EnhancedSVGViewer:
                     # Highlight all elements in the group
                     self.highlight_assigned_group(found_element.assigned_group)
                 else:
-                    # Just highlight this element
-                    self.set_element_style(found_element, 'hover')
+                    # Just highlight this element - ALE TYLKO jeśli nie jest zaznaczony
+                    if found_element != self.selected_text_element and found_element != self.selected_line_element:
+                        self.set_element_style(found_element, 'hover')
                 
                 # Update cursor
                 self.canvas.config(cursor="hand2")
@@ -794,19 +1045,25 @@ class EnhancedSVGViewer:
                 self.canvas.config(cursor="")
     
     def highlight_assigned_group(self, group_id: str):
-        """Highlight all elements in an assigned group"""
+        """Highlight all elements in an assigned group using colors from config"""
+        from src.core import config
+        
         self.hovered_group_elements.clear()
         
         for canvas_id, elem in self.interactive_elements.items():
             if elem.assigned_group == group_id:
                 self.hovered_group_elements.append(elem)
                 
-                # Apply group hover style
+                # NIE zmieniaj koloru jeśli element jest zaznaczony
+                if elem == self.selected_text_element or elem == self.selected_line_element:
+                    continue  # Zostaw kolor zaznaczenia
+                
+                # Apply group hover style using colors from config
                 if elem.element_type == 'text':
-                    color = self.colors['hover_text']  # Ciemny fioletowy
+                    color = getattr(config, 'HOVER_TEXT_COLOR', '#8B008B')  # Fioletowy
                     self.canvas.itemconfig(elem.canvas_id, fill=color)
                 elif elem.element_type in ['line', 'polyline']:
-                    color = self.colors['hover_segment']  # Jasny różowy
+                    color = getattr(config, 'HOVER_SEGMENT_COLOR', '#FFB6C1')  # Różowy
                     self.canvas.itemconfig(elem.canvas_id, fill=color, width=3)
                 else:
                     color = self.colors['hover']
@@ -815,10 +1072,14 @@ class EnhancedSVGViewer:
     def clear_hover_group(self):
         """Clear hover highlighting from all group elements"""
         if self.hover_element and not self.hover_element.assigned_group:
-            self.set_element_style(self.hover_element, 'normal')
+            # NIE resetuj jeśli element jest zaznaczony
+            if self.hover_element != self.selected_text_element and self.hover_element != self.selected_line_element:
+                self.set_element_style(self.hover_element, 'normal')
         
         for elem in self.hovered_group_elements:
-            self.set_element_style(elem, 'normal')
+            # NIE resetuj jeśli element jest zaznaczony
+            if elem != self.selected_text_element and elem != self.selected_line_element:
+                self.set_element_style(elem, 'normal')
         
         self.hovered_group_elements.clear()
     
@@ -864,9 +1125,15 @@ class EnhancedSVGViewer:
         self.update_selection_label()
     
     def set_element_style(self, element: InteractiveElement, style: str):
-        """Set element visual style"""
+        """Set element visual style using colors from config"""
+        from src.core import config
+        
         if style == 'selected':
-            color = self.colors['selected']
+            # Użyj kolorów SELECTED z config
+            if element.element_type == 'text':
+                color = getattr(config, 'SELECTED_TEXT_COLOR', '#00FFFF')
+            else:  # segment/line
+                color = getattr(config, 'SELECTED_SEGMENT_COLOR', '#FFFF00')
         elif style == 'hover':
             color = self.colors['hover']
         else:
@@ -878,8 +1145,11 @@ class EnhancedSVGViewer:
         
         # Apply style based on element type
         if element.element_type in ['line', 'polyline']:
-            self.canvas.itemconfig(element.canvas_id, fill=color, width=3 if style != 'normal' else 1)
+            # Segmenty - zmiana koloru linii, grubsza linia gdy zaznaczone
+            self.canvas.itemconfig(element.canvas_id, fill=color, 
+                                  width=4 if style == 'selected' else 3 if style == 'hover' else 2)
         elif element.element_type == 'text':
+            # Teksty - zmiana koloru wypełnienia
             self.canvas.itemconfig(element.canvas_id, fill=color)
         elif element.element_type in ['rect', 'circle']:
             self.canvas.itemconfig(element.canvas_id, outline=color)
@@ -1066,38 +1336,7 @@ class EnhancedSVGViewer:
             self.render_svg()
             self.update_zoom_label()
     
-    def create_assignment_controls(self, toolbar):
-        """Create simplified assignment controls"""
-        # Separator
-        separator = ttk.Separator(toolbar, orient=tk.VERTICAL)
-        separator.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 10))
-        
-        # Assignment buttons frame
-        self.assignment_frame = ttk.Frame(toolbar)
-        self.assignment_frame.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Assign button
-        self.assign_btn = ttk.Button(self.assignment_frame, text="Przypisz Tekst", 
-                                   command=self.assign_text_to_line,
-                                   state='disabled')
-        self.assign_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Clear line assignments button  
-        self.clear_line_btn = ttk.Button(self.assignment_frame, text="Wyczyść linię", 
-                                       command=self.clear_line_assignments,
-                                       state='disabled')
-        self.clear_line_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Clear selection button
-        self.clear_btn = ttk.Button(self.assignment_frame, text="Wyczyść wybór", 
-                                  command=self.clear_assignment_selection)
-        self.clear_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Instructions
-        self.instruction_label = ttk.Label(self.assignment_frame, 
-                                          text="Kliknij tekst, potem linię, naciśnij 'Przypisz'",
-                                          font=('Arial', 9, 'italic'))
-        self.instruction_label.pack(side=tk.LEFT, padx=(10, 0))
+    # USUNIĘTO STARĄ create_assignment_controls - teraz wszystko w create_toolbar
     
     def set_assignment_callback(self, callback):
         """Set callback function for assignment events"""
@@ -1117,16 +1356,37 @@ class EnhancedSVGViewer:
         self.update_assignment_status()
     
     def update_assignment_buttons(self):
-        """Update assignment button states"""
+        """Update assignment button states - zaktualizowane dla Canvas przycisków"""
         can_assign = (self.selected_text_element is not None and 
                      self.selected_line_element is not None)
         can_clear_line = self.selected_line_element is not None
         
-        # Enable/disable assign button
-        self.assign_btn.config(state='normal' if can_assign else 'disabled')
+        # Kolory
+        colors = {
+            'button_bg': '#333333',
+            'button_disabled': '#1a1a1a',
+            'accent': '#4a9eff',
+            'text': '#e0e0e0',
+            'text_disabled': '#666666'
+        }
         
-        # Enable/disable clear line button
-        self.clear_line_btn.config(state='normal' if can_clear_line else 'disabled')
+        # Enable/disable assign button (Canvas)
+        if hasattr(self, 'assign_btn_canvas') and self.assign_btn_canvas:
+            if can_assign:
+                self.assign_btn_canvas.itemconfig(self.assign_btn_canvas.circle, fill=colors['accent'])
+                self.assign_btn_canvas.itemconfig(self.assign_btn_canvas.icon_id, fill='white')
+            else:
+                self.assign_btn_canvas.itemconfig(self.assign_btn_canvas.circle, fill=colors['button_disabled'])
+                self.assign_btn_canvas.itemconfig(self.assign_btn_canvas.icon_id, fill=colors['text_disabled'])
+        
+        # Enable/disable clear line button (Canvas)
+        if hasattr(self, 'clear_line_btn_canvas') and self.clear_line_btn_canvas:
+            if can_clear_line:
+                self.clear_line_btn_canvas.itemconfig(self.clear_line_btn_canvas.circle, fill=colors['button_bg'])
+                self.clear_line_btn_canvas.itemconfig(self.clear_line_btn_canvas.icon_id, fill=colors['text'])
+            else:
+                self.clear_line_btn_canvas.itemconfig(self.clear_line_btn_canvas.circle, fill=colors['button_disabled'])
+                self.clear_line_btn_canvas.itemconfig(self.clear_line_btn_canvas.icon_id, fill=colors['text_disabled'])
     
     def assign_text_to_line(self):
         """Assign selected text to selected line"""
