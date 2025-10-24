@@ -981,6 +981,7 @@ class InteractiveGUI:
         self.texts_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.texts_listbox.bind('<<ListboxSelect>>', self.on_text_select)
         self.texts_listbox.bind('<Double-Button-1>', self.on_text_double_click)
+        self.texts_listbox.bind('<Button-3>', self.quick_assign_right_click)
         
         # Lista segmentów (BEZ tytułu sekcji)
         self.segments_label = tk.StringVar(value="Wszystkie segmenty (🟢 przypisane, 🔴 nieprzypisane):")
@@ -2243,10 +2244,34 @@ class InteractiveGUI:
             self.log_error(f"❌ Błąd szybkiego przypisania: {e}")
     
     def quick_assign_right_click(self, event):
-        """Szybkie przypisanie PPM - bezpośrednio przez AssignmentManager (jak SVG viewer)"""
-        # Sprawdź czy mamy zaznaczony tekst i segment
+        """Szybkie przypisanie PPM - automatycznie wybiera element pod kursorem i przypisuje"""
+        # Określ który listbox został kliknięty
+        clicked_widget = event.widget
+        
+        # Pobierz indeks elementu pod kursorem
+        index = clicked_widget.nearest(event.y)
+        if index < 0:
+            self.log_message("⚠️ PPM: Brak elementu pod kursorem")
+            return
+        
+        # Automatycznie wybierz element pod kursorem
+        clicked_widget.selection_clear(0, tk.END)
+        clicked_widget.selection_set(index)
+        clicked_widget.activate(index)
+        
+        # Wywołaj odpowiednią metodę wyboru
+        if clicked_widget == self.texts_listbox:
+            # Symuluj wybór tekstu
+            self.on_text_select(None)
+            self.log_message(f"🖱️ PPM: Auto-wybrano tekst #{index}")
+        elif clicked_widget == self.segments_listbox:
+            # Symuluj wybór segmentu
+            self.on_segment_select(None)
+            self.log_message(f"🖱️ PPM: Auto-wybrano segment #{index}")
+        
+        # Teraz sprawdź czy mamy oba elementy wybrane
         if not self.stored_text_data or not self.stored_segment_data:
-            self.log_message("⚠️ PPM: Najpierw wybierz tekst i segment")
+            self.log_message("⚠️ PPM: Potrzebny tekst I segment (kliknij PPM na obu listach)")
             return
         
         if not self.assignment_manager:

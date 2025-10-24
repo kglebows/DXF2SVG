@@ -353,6 +353,7 @@ class EnhancedSVGViewer:
         self.canvas.bind("<Button-1>", self.on_mouse_press)
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_mouse_release)
+        self.canvas.bind("<Button-3>", self.on_right_click)  # PPM - szybkie przypisanie
         
         # Mouse motion for hover effects
         self.canvas.bind("<Motion>", self.on_mouse_motion)
@@ -973,6 +974,22 @@ class EnhancedSVGViewer:
             pass  # Click handling is done in on_mouse_press
         
         self.is_dragging = False
+    
+    def on_right_click(self, event):
+        """Handle right-click for quick assignment (PPM)"""
+        # Jeśli mamy zaznaczone oba elementy, wykonaj przypisanie
+        if self.selected_text_element and self.selected_line_element:
+            print("🖱️ PPM SVG: Wykonuję przypisanie...")
+            self.assign_text_to_line()
+        else:
+            # Jeśli nie mamy obu elementów, pokaż info
+            missing = []
+            if not self.selected_text_element:
+                missing.append("tekst")
+            if not self.selected_line_element:
+                missing.append("linię/segment")
+            
+            print(f"⚠️ PPM SVG: Brak wyboru - najpierw kliknij {' i '.join(missing)} (lewy przycisk)")
     
     def on_mouse_motion(self, event):
         """Handle mouse motion for hover effects using canvas coordinate system"""
