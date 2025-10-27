@@ -16,20 +16,20 @@ os.chdir(script_dir)
 sys.path.insert(0, script_dir)
 
 try:
-    print("🚀 Uruchamianie DXF2SVG Interactive GUI...")
-    print(f"📁 Katalog roboczy: {os.getcwd()}")
+    print("Uruchamianie DXF2SVG Interactive GUI...")
+    print(f"Katalog roboczy: {os.getcwd()}")
     
     # Import i uruchomienie nowej wersji GUI
     from src.gui.interactive_gui_new import InteractiveGUI
     
     app = InteractiveGUI()
-    print("✅ GUI zainicjalizowany, uruchamianie...")
+    print("GUI zainicjalizowany, uruchamianie...")
     app.run()
     
 except KeyboardInterrupt:
-    print("\n⚠️ Przerwano przez użytkownika")
+    print("\nPrzerwano przez uzytkownika")
 except Exception as e:
-    print(f"❌ Błąd uruchomienia GUI: {e}")
+    print(f"Blad uruchomienia GUI: {e}")
     import traceback
     traceback.print_exc()
     input("Naciśnij Enter aby zamknąć...")

@@ -131,6 +131,7 @@ dmypy.json
 *.cfg
 logs/
 temp/
+test/
 debug.log
 output_*.svg
 *.bat

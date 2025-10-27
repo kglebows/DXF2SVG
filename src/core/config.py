@@ -98,10 +98,23 @@ SEGMENT_MIN_WIDTH = 0
 ASSIGNED_SEGMENT_COLOR = "#00778B"  # Kolor przypisanych segmentów
 UNASSIGNED_SEGMENT_COLOR = "#FFC0CB"  # Różowy dla nieprzypisanych segmentów
 TEXT_SEGMENT_COLOR = "#000000"  # Czarny dla tekstów segmentów
+
+# ============================================================================
+# ZAAWANSOWANE FORMATOWANIE
+# ============================================================================
+USE_ADVANCED_FORMATTING = False
+ADVANCED_INPUT_FORMAT = "{name}/F{inv:2}/STR{str:2}"
+ADVANCED_OUTPUT_FORMAT = "S{mppt:2}-{str:2}/{inv:2}"
+ADVANCED_ADDITIONAL_VARS = {"mppt": "{str}/2 + {str}%2"}
 Y_TOLERANCE = 0.01
 X_TOLERANCE = 0.01
 SEARCH_RADIUS = 6.0 
 TEXT_LOCATION = "above"     # "above", "below", "any"
+
+# Parametry segmentacji polilinii
+POLYLINE_PROCESSING_MODE = "individual_segments"  # "individual_segments", "merge_segments" 
+SEGMENT_MERGE_GAP_TOLERANCE = 1.0  # Tolerancja przerw między segmentami do łączenia
+MAX_MERGE_DISTANCE = 5.0  # Maksymalna odległość między punktami końcowymi do łączenia
 
 # Parametry wizualizacji
 SHOW_TEXT_DOTS = True
@@ -120,6 +133,15 @@ STRING_LABEL_OFFSET = 0
 CLUSTER_DISTANCE_THRESHOLD = 300.0
 MARGIN = 2.0  # Margines dla SVG
 MAX_DISTANCE = 10.0  # Maksymalna odległość dla automatycznego przypisania
+
+# Nowe parametry edytora interaktywnego
+SHOW_ELEMENT_POINTS = False  # Pokazuj wszystkie kropki i trójkąty
+SHOW_ASSIGNED_SEGMENT_LABELS = True  # Pokazuj numery segmentów przypisanych
+SHOW_UNASSIGNED_SEGMENT_LABELS = True  # Pokazuj numery segmentów nieprzypisanych
+SELECTED_SEGMENT_COLOR = "#FFFF00"  # Żółty dla zaznaczonego segmentu
+SELECTED_TEXT_COLOR = "#00FFFF"  # Cyan dla zaznaczonego tekstu
+HOVER_SEGMENT_COLOR = "#FFB6C1"  # Jasny różowy dla segmentów w grupie (hover)
+HOVER_TEXT_COLOR = "#8B008B"  # Ciemny fioletowy dla tekstów w grupie (hover)
 
 def print_format_info():
     """Wyświetl informacje o dostępnych formatach tekstu"""
@@ -169,6 +191,46 @@ def parse_text_to_dict(text: str, station_id: str = None) -> Dict:
     try:
         cleaned = clean_dxf_text(text)
         logger.debug(f"Tekst oryginalny: '{text}' -> po czyszczeniu: '{cleaned}'")
+        
+        # SPRAWDŹ NAJPIERW ZAAWANSOWANE FORMATOWANIE
+        if globals().get('USE_ADVANCED_FORMATTING', False):
+            logger.debug("Próbuję zaawansowane formatowanie...")
+            
+            from src.core.advanced_formatter import AdvancedFormatter
+            
+            input_format = globals().get('ADVANCED_INPUT_FORMAT', '')
+            output_format = globals().get('ADVANCED_OUTPUT_FORMAT', '')
+            additional_vars = globals().get('ADVANCED_ADDITIONAL_VARS', {})
+            
+            if input_format and output_format:
+                formatter = AdvancedFormatter()
+                variables = formatter.parse_input_format(cleaned, input_format)
+                
+                if variables:
+                    logger.debug(f"Zaawansowane formatowanie rozpoznało: {variables}")
+                    
+                    # Utwórz standardowy dict format dla kompatybilności z resztą systemu
+                    # Mapuj zmienne zaawansowane na standardowe pola
+                    result = {
+                        'station': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                        'station_id': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                        'inverter': f"I{variables.get('inv', 0):02d}",
+                        'mppt': f"MPPT{variables.get('mppt', 0)}",
+                        'substring': f"STR{variables.get('str', variables.get('tr', 0))}",
+                        'original_text': text,
+                        'parsed_with': 'advanced_formatting',
+                        'variables': variables  # Zachowaj oryginalne zmienne
+                    }
+                    
+                    logger.debug(f"Zwracam standardowy format: {result}")
+                    return result
+                else:
+                    logger.debug(f"Zaawansowane formatowanie nie rozpoznało tekstu '{cleaned}' z formatem '{input_format}'")
+            else:
+                logger.warning("Zaawansowane formatowanie włączone ale brak formatów input/output")
+        
+        # LEGACY FORMATOWANIE (jeśli zaawansowane nie zadziałało)
+        logger.debug("Próbuję legacy formatowanie...")
         
         # Użyj przekazanego station_id lub domyślnego z config
         if station_id is None:
@@ -298,7 +360,11 @@ def try_parse_format(cleaned_text: str, format_name: str, original_text: str, st
 def get_svg_id(parsed: Dict) -> str:
     """Generuje SVG ID z sparsowanych danych zgodnie z aktualnym formatem ID"""
     try:
-        # Pobierz aktualny format ID z konfiguracji
+        # Sprawdź czy używamy zaawansowanego formatowania
+        if globals().get('USE_ADVANCED_FORMATTING', False):
+            return get_advanced_formatted_id(parsed)
+        
+        # Pobierz aktualny format ID z konfiguracji (legacy system)
         current_format = ID_FORMAT
         
         # Wyciągnij numer MPPT
@@ -324,3 +390,103 @@ def get_svg_id(parsed: Dict) -> str:
     except Exception as e:
         logger.error(f"Błąd generowania SVG ID: {e}")
         return "unknown"
+
+
+def get_advanced_formatted_id(parsed: Dict) -> str:
+    """Generuje SVG ID używając zaawansowanego formatowania"""
+    try:
+        from src.core.advanced_formatter import AdvancedFormatter
+        
+        # Pobierz konfigurację zaawansowanego formatowania
+        input_format = globals().get('ADVANCED_INPUT_FORMAT', '')
+        output_format = globals().get('ADVANCED_OUTPUT_FORMAT', '')
+        additional_vars = globals().get('ADVANCED_ADDITIONAL_VARS', {})
+        
+        if not input_format or not output_format:
+            logger.warning("Brak skonfigurowanego zaawansowanego formatowania, używam legacy")
+            return get_legacy_formatted_id(parsed)
+        
+        # NOWE: Użyj zaawansowanego formatera do parsowania input
+        # Jeśli parsed zawiera klucz 'original_text', użyj go do re-parsowania
+        original_text = parsed.get('original_text')
+        if not original_text:
+            # Fallback: spróbuj zrekonstruować original_text z parsed data
+            # To będzie działać dla przypadków gdzie legacy parser zadziałał
+            station = parsed.get('station', parsed.get('station_id', ''))
+            inverter_num = parsed.get('inverter', '').replace('I', '').lstrip('0')
+            
+            # Sprawdź czy mamy wszystkie potrzebne części do rekonstrukcji
+            if station and inverter_num:
+                # Spróbuj różnych formatów
+                possible_formats = [
+                    f"{station}/F{inverter_num.zfill(2)}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
+                    f"{station}/F{inverter_num}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
+                ]
+                
+                for possible_text in possible_formats:
+                    if possible_text.count('/') >= 2:  # Minimum format check
+                        original_text = possible_text
+                        break
+        
+        if not original_text:
+            logger.warning(f"Nie można ustalić original_text z parsed: {parsed}")
+            return get_legacy_formatted_id(parsed)
+        
+        logger.debug(f"DEBUG: original_text = {original_text}")
+        logger.debug(f"DEBUG: input_format = {input_format}")
+        
+        # Użyj zaawansowanego formatera do parsowania
+        formatter = AdvancedFormatter()
+        variables = formatter.parse_input_format(original_text, input_format)
+        
+        if not variables:
+            logger.warning(f"Zaawansowany formatter nie może sparsować '{original_text}' z formatem '{input_format}'")
+            return get_legacy_formatted_id(parsed)
+        
+        logger.debug(f"DEBUG: formatter variables = {variables}")
+        
+        # Ustaw zmienne w formaterze
+        formatter.variables = variables
+        
+        # Ustaw dodatkowe zmienne
+        for var_name, expression in additional_vars.items():
+            formatter.set_additional_variable(var_name, expression)
+        
+        # Wygeneruj output
+        result = formatter.format_output(output_format)
+        logger.debug(f"DEBUG: final result = {result}")
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Błąd zaawansowanego formatowania: {e}")
+        import traceback
+        traceback.print_exc()
+        return get_legacy_formatted_id(parsed)
+
+
+def get_legacy_formatted_id(parsed: Dict) -> str:
+    """Generuje SVG ID używając starego systemu (fallback)"""
+    try:
+        current_format = ID_FORMAT
+        
+        # Wyciągnij numer MPPT
+        mppt = parsed['mppt'].replace("MPPT", "").zfill(2)
+        
+        # Wyciągnij numer stringa
+        sub = re.sub(r'[^0-9]', '', parsed['substring'])
+        
+        # Wyciągnij numer falownika (usuń prefiks I)
+        inverter = parsed['inverter'].replace("I", "").zfill(2)
+        
+        if current_format == "01-02/03":
+            return f"{mppt}-{sub.zfill(2)}/{inverter}"
+        elif current_format == "05-06/07":
+            station_num = STATION_NUMBER.zfill(2)
+            return f"{station_num}-{mppt}/{inverter}"
+        else:
+            return f"{mppt}-{sub}/{inverter}"
+            
+    except Exception as e:
+        logger.error(f"Błąd legacy formatowania: {e}")
+        return f"error-{parsed.get('substring', 'unknown')}"
