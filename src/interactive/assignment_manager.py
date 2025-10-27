@@ -207,8 +207,10 @@ class AssignmentManager:
         result['was_reassignment'] = not (text_was_unassigned and segment_was_unassigned)
         
         # Usuń stare przypisania segmentu
-        for inv_id, strings in self.current_assigned_data.items():
-            for str_id, segments in strings.items():
+        for inv_id in list(self.current_assigned_data.keys()):
+            strings = self.current_assigned_data[inv_id]
+            for str_id in list(strings.keys()):
+                segments = strings[str_id]
                 if isinstance(segments, list):
                     original_count = len(segments)
                     self.current_assigned_data[inv_id][str_id] = [
@@ -216,6 +218,20 @@ class AssignmentManager:
                     ]
                     if len(self.current_assigned_data[inv_id][str_id]) < original_count:
                         result['removed_assignments'].append(f"segment #{segment_id} z {str_id}")
+                        
+                        # Jeśli tekst stracił wszystkie segmenty, usuń go i przenieś do nieprzypisanych
+                        if len(self.current_assigned_data[inv_id][str_id]) == 0:
+                            # Usuń pusty wpis
+                            del self.current_assigned_data[inv_id][str_id]
+                            
+                            # Dodaj tekst z powrotem do nieprzypisanych (jeśli to nie jest tekst, który teraz przypisujemy)
+                            if str_id != text_id:
+                                text_data = next((t for t in self.all_texts if t.get('id') == str_id), None)
+                                if text_data and text_data not in self.unassigned_texts:
+                                    self.unassigned_texts.append(text_data)
+                                    logger.info(f"Tekst {str_id} stracił ostatni segment i wrócił do nieprzypisanych")
+                                    result['removed_assignments'].append(f"{str_id} wrócił do nieprzypisanych (stracił ostatni segment)")
+                        break
         
         # Usuń stare przypisania tekstu - tylko jeśli to przepisanie (reassignment)
         # NIE usuwaj automatycznie wszystkich przypisań - teksty mogą być przypisane do wielu segmentów

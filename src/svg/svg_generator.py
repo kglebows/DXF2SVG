@@ -504,20 +504,20 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                     # Wypisz wszystkie numery oddzielone spacjami
                     segments_info = f"({' '.join(f'#{num}' for num in segment_numbers)})"
                     display_text = f"{text_data['id']} {segments_info}"
-                else:
-                    display_text = f"{text_data['id']} (BŁĄD)"
-                
-                text_element = dwg.text(
-                    display_text, 
-                    insert=(scale_x(x) + config.DOT_RADIUS*1.5, scale_y(y)+config.TEXT_SIZE*0.3),
-                    fill=config.TEXT_COLOR_ASSIGNED,
-                    opacity=0.6,  # Zwiększona przejrzystość
-                    font_size=config.TEXT_SIZE*0.6  # Mniejszy rozmiar
-                )
-                # Dodaj grupę przypisania do etykiety tekstu
-                text_element.attribs['data-assignment-group'] = text_id
-                assigned_group.add(text_element)
-                assigned_texts_count += 1
+                    
+                    text_element = dwg.text(
+                        display_text, 
+                        insert=(scale_x(x) + config.DOT_RADIUS*1.5, scale_y(y)+config.TEXT_SIZE*0.3),
+                        fill=config.TEXT_COLOR_ASSIGNED,
+                        opacity=0.6,  # Zwiększona przejrzystość
+                        font_size=config.TEXT_SIZE*0.6  # Mniejszy rozmiar
+                    )
+                    # Dodaj grupę przypisania do etykiety tekstu
+                    text_element.attribs['data-assignment-group'] = text_id
+                    assigned_group.add(text_element)
+                    assigned_texts_count += 1
+                # Jeśli tekst nie ma segment_numbers, zostanie pominięty tutaj
+                # i wyrenderowany jako nieprzypisany (jeśli jest w unassigned_texts)
     
     console.info(f"Wyrenderowano {assigned_texts_count} przypisanych tekstów")
     logger.info(f"Narysowano {segment_global_index - 1} przypisanych segmentów")

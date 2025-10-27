@@ -11,8 +11,16 @@ from typing import Dict, Any, Callable
 from src.config.config_manager import ConfigManager
 
 
-# GLOBALNA ZMIENNA DLA PROMIENIA ZAOKRĄGLEŃ - dla wizualnej spójności
-BORDER_RADIUS = 32  # Większy promień dla wyraźnych zaokrągleń
+# ============================================================================
+# GLOBALNE STAŁE DLA ZAOKRĄGLEŃ I ODSTĘPÓW (zsynchronizowane z interactive_gui_new.py)
+# ============================================================================
+CORNER_RADIUS = 32          # Promień zaokrągleń dla wszystkich elementów
+LAYER_SPACING = 0           # Odstęp między warstwami (0 = bezpośredni kontakt)
+CONTENT_PADDING = 0         # Padding wewnętrzny dla contentu (0 = od krawędzi zaokrągleń)
+TAB_SPACING = 16            # Odstęp między nazwami zakładek a warstwą 1 (połowa CORNER_RADIUS)
+ELEMENT_SPACING = 16        # Odstęp canvas_inner od krawędzi (połowa CORNER_RADIUS)
+BORDER_RADIUS = CORNER_RADIUS  # Backwards compatibility
+# ============================================================================
 
 
 def create_rounded_rectangle(canvas, x1, y1, x2, y2, radius=None, **kwargs):
@@ -317,11 +325,30 @@ CONFIG_PARAMETERS = {
 }
 
 
-class UnifiedConfigTab(ttk.Frame):
+class UnifiedConfigTab(tk.Frame):
     """Zunifikowana zakładka konfiguracji z wszystkimi parametrami"""
     
     def __init__(self, parent, config_manager: ConfigManager, on_convert_callback: Callable = None, main_app=None):
-        super().__init__(parent)
+        # Kolory - MUSI BYĆ PRZED super().__init__
+        self.colors = {
+            'bg': '#0d0d0d',           # Warstwa 0 - najciemniejsza (tło główne)
+            'layer1_bg': '#1a1a1a',    # Warstwa 1 - tło zakładek
+            'layer2_bg': '#2d2d2d',    # Warstwa 2 - tło kart/sekcji
+            'layer3_bg': '#3a3a3a',    # Warstwa 3 - tło tooltipów
+            'card_bg': '#2d2d2d',      # Alias dla kompatybilności
+            'card_hover': '#3a3a3a',   # Hover
+            'input_bg': '#252525',     # Tło pól tekstowych
+            'button_bg': '#3a3a3a',    # Tło przycisków
+            'accent': '#4a9eff',       # Kolor akcentu
+            'accent_hover': '#6bb3ff', # Hover na akcentach
+            'text': '#e0e0e0',         # Główny kolor tekstu
+            'text_dim': '#a0a0a0',     # Przyciemniony tekst
+            'success': '#4caf50',      # Zielony (sukces)
+            'warning': '#ff9800',      # Pomarańczowy (ostrzeżenie)
+            'border': '#404040',       # Kolor ramek
+        }
+        
+        super().__init__(parent, bg=self.colors['bg'])  # tk.Frame z czarnym tłem
         
         self.config_manager = config_manager
         self.on_convert_callback = on_convert_callback
@@ -341,25 +368,6 @@ class UnifiedConfigTab(ttk.Frame):
         # Zmienne dla plików
         self.dxf_file_var = tk.StringVar()
         self.svg_file_var = tk.StringVar(value="output_interactive.svg")
-        
-        # Kolory ciemnego motywu - WARSTWY
-        self.colors = {
-            'bg': '#0d0d0d',           # Warstwa 0 - czarne tło
-            'layer1_bg': '#1a1a1a',    # Warstwa 1 - zakładki i ich zawartość
-            'layer2_bg': '#2d2d2d',    # Warstwa 2 - obszary (karty)
-            'layer3_bg': '#3a3a3a',    # Warstwa 3 - tooltips (najjaśniejsze)
-            'card_bg': '#2d2d2d',      # Alias dla kompatybilności
-            'card_hover': '#3a3a3a',   # Hover
-            'text': '#e0e0e0',         # Jasny tekst
-            'text_dim': '#a0a0a0',     # Przyciemniony tekst
-            'accent': '#4a9eff',       # Niebieski akcent
-            'accent_hover': '#6bb3ff', # Hover na akcentach
-            'success': '#4caf50',      # Zielony (sukces)
-            'warning': '#ff9800',      # Pomarańczowy (ostrzeżenie)
-            'border': '#404040',       # Kolor ramek (praktycznie nieużywany)
-            'input_bg': '#252525',     # Tło pól input
-            'button_bg': '#3a3a3a',    # Tło przycisków
-        }
         
         self.setup_styles()
         self.create_ui()
@@ -494,25 +502,96 @@ class UnifiedConfigTab(ttk.Frame):
                        relief=tk.FLAT)
         
     def create_ui(self):
-        """Tworzy interfejs użytkownika z ciemnym motywem (warstwa 1)"""
-        # Główny scrollable container z ciemnym tłem warstwy 1
-        main_canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0, 
-                               bg=self.colors['layer1_bg'])
-        scrollbar = ttk.Scrollbar(self, orient="vertical", command=main_canvas.yview,
-                                 style='Vertical.TScrollbar')
+        """Tworzy interfejs użytkownika z ciemnym motywem (warstwa 1)
+        Używa globalnych stałych: CORNER_RADIUS, LAYER_SPACING, TAB_SPACING, ELEMENT_SPACING
+        """
+        # Padding frame - TAB_SPACING jako odstęp od nazw zakładek
+        padding_frame = tk.Frame(self, bg=self.colors['bg'])
+        padding_frame.pack(fill=tk.BOTH, expand=True, 
+                          padx=LAYER_SPACING, pady=(TAB_SPACING, LAYER_SPACING))
+        
+        # Border canvas dla zaokrąglonego tła
+        border_canvas = tk.Canvas(padding_frame, bg=self.colors['bg'],
+                                 highlightthickness=0, borderwidth=0)
+        border_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Funkcja rysująca zaokrąglony prostokąt
+        def round_rectangle(x1, y1, x2, y2, r=25, **kwargs):
+            points = [x1+r, y1, x1+r, y1, x2-r, y1, x2-r, y1, x2, y1,
+                     x2, y1+r, x2, y1+r, x2, y2-r, x2, y2-r, x2, y2,
+                     x2-r, y2, x2-r, y2, x1+r, y2, x1+r, y2, x1, y2,
+                     x1, y2-r, x1, y2-r, x1, y1+r, x1, y1+r, x1, y1]
+            return border_canvas.create_polygon(points, **kwargs, smooth=True)
+        
+        # Rysuj zaokrąglone tło używając globalnego CORNER_RADIUS
+        def draw_rounded_bg(event=None):
+            border_canvas.delete('bg')
+            w = border_canvas.winfo_width()
+            h = border_canvas.winfo_height()
+            if w > 1 and h > 1:
+                round_rectangle(0, 0, w, h, r=CORNER_RADIUS,
+                              fill=self.colors['layer1_bg'],
+                              outline='', tags='bg')
+                border_canvas.lower('bg')
+        
+        border_canvas.bind('<Configure>', draw_rounded_bg)
+        
+        # Canvas_inner: PRZESUNIĘTY o ELEMENT_SPACING (16px) od każdej strony aby pokazać zaokrąglenia
+        canvas_inner = tk.Frame(border_canvas, bg=self.colors['layer1_bg'])
+        border_canvas.create_window(ELEMENT_SPACING, ELEMENT_SPACING, 
+                                    window=canvas_inner, anchor='nw', tags='inner')
+        
+        # Content frame bez paddingu
+        content_frame = tk.Frame(canvas_inner, bg=self.colors['layer1_bg'])
+        content_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Aktualizuj rozmiar canvas_inner - mniejszy o 2*ELEMENT_SPACING (z każdej strony)
+        def update_size(event=None):
+            w = border_canvas.winfo_width()
+            h = border_canvas.winfo_height()
+            if w > 2*ELEMENT_SPACING and h > 2*ELEMENT_SPACING:
+                border_canvas.itemconfig('inner', width=w-2*ELEMENT_SPACING, height=h-2*ELEMENT_SPACING)
+        
+        border_canvas.bind('<Configure>', lambda e: (draw_rounded_bg(e), update_size(e)))
+        
+        # Główny scrollable container - CZARNE TŁO dla całej zawartości
+        main_canvas = tk.Canvas(content_frame, borderwidth=0, highlightthickness=0, 
+                               bg=self.colors['layer1_bg'], 
+                               highlightbackground=self.colors['layer1_bg'])
         self.scrollable_frame = tk.Frame(main_canvas, bg=self.colors['layer1_bg'])
         
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
-        )
+        # Create window at (0,0) and track changes
+        canvas_window = main_canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
-        main_canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
-        main_canvas.configure(yscrollcommand=scrollbar.set)
+        def on_frame_configure(event=None):
+            # Update scroll region NAJPIERW
+            main_canvas.update_idletasks()  # Upewnij się że layout jest gotowy
+            main_canvas.configure(scrollregion=main_canvas.bbox("all"))
+            
+            # Check if scrollbar is needed
+            canvas_height = main_canvas.winfo_height()
+            content_height = self.scrollable_frame.winfo_reqheight()
+            if content_height > canvas_height:
+                # Need scrollbar
+                if not hasattr(self, 'scrollbar_visible') or not self.scrollbar_visible:
+                    self.scrollbar.pack(side="right", fill="y")
+                    self.scrollbar_visible = True
+            else:
+                # Don't need scrollbar
+                if hasattr(self, 'scrollbar_visible') and self.scrollbar_visible:
+                    self.scrollbar.pack_forget()
+                    self.scrollbar_visible = False
         
-        # Layout
+        self.scrollable_frame.bind("<Configure>", on_frame_configure)
+        
+        # Scrollbar - initially hidden, CIEMNY kolor
+        self.scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=main_canvas.yview,
+                                      style='Vertical.TScrollbar')
+        main_canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.scrollbar_visible = False
+        
+        # Layout - only canvas initially
         main_canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
         
         # INTELIGENTNE scrollowanie - tylko gdy zawartość jest większa niż widok
         def smart_scroll(event):
@@ -524,12 +603,17 @@ class UnifiedConfigTab(ttk.Frame):
                 # Scrolluj tylko jeśli zawartość się nie mieści
                 main_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
                 
-                # Zapobiegaj scrollowaniu poza zakres (blokada pustej przestrzeni u góry)
+                # Zapobiegaj scrollowaniu poza zakres
                 current_view = main_canvas.yview()
                 if current_view[0] < 0:
                     main_canvas.yview_moveto(0)
+                elif current_view[1] > 1:
+                    main_canvas.yview_moveto(1.0 - (current_view[1] - current_view[0]))
         
         self.scrollable_frame.bind_all("<MouseWheel>", smart_scroll)
+        
+        # Upewnij się że scrollowanie zaczyna się od góry
+        main_canvas.yview_moveto(0)
         
         # Przechowaj referencję do canvas dla późniejszego użycia
         self.main_canvas = main_canvas
@@ -557,6 +641,8 @@ class UnifiedConfigTab(ttk.Frame):
     def create_header(self):
         """Nagłówek z wyborem konfiguracji - kompaktowy w jednej linii"""
         card = self.create_bento_card(self.scrollable_frame, None)  # Bez tytułu
+        # BEZ dodatkowego paddingu - CORNER_RADIUS już zapewnia odstęp
+        # card.master.master.pack_configure(pady=(0, 3))  # Usunięto dodatkowy padding
         
         # Wszystko w jednej linii
         row = tk.Frame(card, bg=self.colors['layer2_bg'])
@@ -1590,7 +1676,7 @@ TOLERANCJE:
         try:
             print("📐 Rozpoczęcie dostosowania szerokości panelu...")
             
-            # Znajdź Notebook (bezpośredni parent)
+            # Znajdź Notebook (bezpośredni parent - już nie ma wrappera)
             notebook = self.master
             print(f"📐 Notebook: {notebook}")
             
@@ -1623,12 +1709,17 @@ TOLERANCJE:
             
             print(f"📐 Maksymalna szerokość karty: {max_card_width}px")
             
-            # Użyj maksymalnej szerokości karty + margines 30px na scrollbar i padding
-            optimal_width = max_card_width + 30
+            # Uwzględnij marginesy używając globalnych stałych:
+            # - padding_frame: LAYER_SPACING z każdej strony (obecnie 0)
+            # - canvas_inner przesunięty: 2*ELEMENT_SPACING (16px z każdej strony = 32px)
+            # - scrollbar gdy widoczny: ~20px
+            # Razem: margines = 2*LAYER_SPACING + 2*ELEMENT_SPACING + 20 (scrollbar)
+            margin = 2*LAYER_SPACING + 2*ELEMENT_SPACING + 20  # = 0 + 32 + 20 = 52px
+            optimal_width = max_card_width + margin
             
-            # Ogranicz do rozsądnych wartości (min 380px, max 580px)
-            optimal_width = max(380, min(580, optimal_width))
-            print(f"📐 Finalna szerokość panelu: {optimal_width}px (karta: {max_card_width}px + 30px margines)")
+            # Ogranicz do rozsądnych wartości (min 400px, max 620px)
+            optimal_width = max(400, min(620, optimal_width))
+            print(f"📐 Finalna szerokość panelu: {optimal_width}px (karta: {max_card_width}px + {margin}px margines)")
             
             # Wywołaj metodę set_left_panel_width z głównej aplikacji
             if self.main_app and hasattr(self.main_app, 'set_left_panel_width'):

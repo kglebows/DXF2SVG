@@ -15,6 +15,14 @@ import xml.etree.ElementTree as ET
 import math
 from typing import Optional, Tuple, List, Callable, Dict, Any
 
+# ============================================================================
+# GLOBALNE STAŁE DLA ZAOKRĄGLEŃ (zsynchronizowane z interactive_gui_new.py)
+# ============================================================================
+CORNER_RADIUS = 32          # Promień zaokrągleń dla wszystkich elementów
+LAYER_SPACING = 0           # Odstęp między warstwami
+ELEMENT_SPACING = 16        # Odstęp content od krawędzi (połowa CORNER_RADIUS)
+# ============================================================================
+
 
 class InteractiveElement:
     """Represents an interactive SVG element"""
@@ -97,19 +105,79 @@ class EnhancedSVGViewer:
         
     def setup_ui(self):
         """Setup the user interface"""
-        # Main frame
-        self.main_frame = ttk.Frame(self.parent)
+        # Main frame z background kolorem
+        self.main_frame = tk.Frame(self.parent, bg='#0d0d0d')
         self.main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Toolbar
         self.create_toolbar()
         
-        # Canvas with scrollbars
-        self.canvas_frame = ttk.Frame(self.main_frame)
+        # Canvas container z padding dla zaokrąglonych rogów
+        canvas_container = tk.Frame(self.main_frame, bg='#0d0d0d')
+        canvas_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        
+        # Border canvas dla zaokrąglonego obramowania
+        border_canvas = tk.Canvas(canvas_container, bg='#0d0d0d', 
+                                 highlightthickness=0, borderwidth=0)
+        border_canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # Funkcja rysująca zaokrąglony prostokąt
+        def round_rectangle(x1, y1, x2, y2, r=25, **kwargs):
+            points = [x1+r, y1,
+                     x1+r, y1,
+                     x2-r, y1,
+                     x2-r, y1,
+                     x2, y1,
+                     x2, y1+r,
+                     x2, y1+r,
+                     x2, y2-r,
+                     x2, y2-r,
+                     x2, y2,
+                     x2-r, y2,
+                     x2-r, y2,
+                     x1+r, y2,
+                     x1+r, y2,
+                     x1, y2,
+                     x1, y2-r,
+                     x1, y2-r,
+                     x1, y1+r,
+                     x1, y1+r,
+                     x1, y1]
+            return border_canvas.create_polygon(points, **kwargs, smooth=True)
+        
+        # Rysuj zaokrąglone tło używając globalnego CORNER_RADIUS
+        def draw_rounded_bg(event=None):
+            border_canvas.delete('bg')
+            w = border_canvas.winfo_width()
+            h = border_canvas.winfo_height()
+            if w > 1 and h > 1:
+                round_rectangle(0, 0, w, h, r=CORNER_RADIUS, 
+                              fill='white', 
+                              outline='', tags='bg')
+                border_canvas.lower('bg')
+        
+        border_canvas.bind('<Configure>', draw_rounded_bg)
+        
+        # Padding frame PRZESUNIĘTY o ELEMENT_SPACING (16px) aby pokazać zaokrąglenia
+        padding_frame = tk.Frame(border_canvas, bg='white')
+        border_canvas.create_window(ELEMENT_SPACING, ELEMENT_SPACING, 
+                                   window=padding_frame, anchor='nw', tags='content')
+        
+        # Aktualizuj rozmiar padding_frame
+        def update_frame_size(event=None):
+            w = border_canvas.winfo_width()
+            h = border_canvas.winfo_height()
+            if w > 2*ELEMENT_SPACING and h > 2*ELEMENT_SPACING:
+                border_canvas.itemconfig('content', width=w-2*ELEMENT_SPACING, height=h-2*ELEMENT_SPACING)
+        
+        border_canvas.bind('<Configure>', lambda e: (draw_rounded_bg(e), update_frame_size(e)))
+        
+        self.canvas_frame = tk.Frame(padding_frame, bg='white', 
+                                    highlightthickness=0, borderwidth=0, relief='flat')
         self.canvas_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Canvas
-        self.canvas = tk.Canvas(self.canvas_frame, bg=self.colors['background'])
+        # Canvas z białym tłem
+        self.canvas = tk.Canvas(self.canvas_frame, bg='white', highlightthickness=0, borderwidth=0)
         
         # Scrollbars
         v_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
@@ -132,11 +200,12 @@ class EnhancedSVGViewer:
         """Create toolbar with controls - NOWY PASEK Z IKONAMI I TOOLTIPAMI"""
         # Ciemny motyw kolorów (zgodny z interactive_gui_new.py)
         colors = {
+            'background': '#0d0d0d',      # Bardzo ciemne tło (zamiast layer1)
             'layer1_bg': '#1a1a1a',
             'layer2_bg': '#2d2d2d',
             'layer3_bg': '#3a3a3a',
             'button_bg': '#333333',
-            'button_hover': '#404040',
+            'button_hover': '#4a9eff',    # Użyj accent color dla hover
             'button_disabled': '#262626',
             'text_disabled': '#666666',
             'accent': '#4a9eff',
@@ -145,13 +214,13 @@ class EnhancedSVGViewer:
             'border': '#404040'
         }
         
-        # Toolbar z zaokrąglonym tłem (warstwa 1)
-        toolbar_container = tk.Frame(self.main_frame, bg=colors['layer1_bg'])
+        # Toolbar z zaokrąglonym tłem i background tłem
+        toolbar_container = tk.Frame(self.main_frame, bg=colors['background'])
         toolbar_container.pack(fill=tk.X, padx=5, pady=(5, 5))
         
         # Canvas dla zaokrąglonego tła
         toolbar_canvas = tk.Canvas(toolbar_container, height=60,
-                                   bg=colors['layer1_bg'],
+                                   bg=colors['background'],
                                    highlightthickness=0, borderwidth=0)
         toolbar_canvas.pack(fill=tk.X)
         
@@ -164,19 +233,19 @@ class EnhancedSVGViewer:
                 from src.gui.unified_config_tab import create_rounded_rectangle
                 create_rounded_rectangle(toolbar_canvas, 0, 0, width, height,
                                        radius=16,
-                                       fill=colors['layer1_bg'],
+                                       fill=colors['background'],
                                        outline='', width=0,
                                        tags='toolbar_bg')
         
         toolbar_canvas.bind('<Configure>', draw_toolbar_bg)
         toolbar_canvas.after(50, draw_toolbar_bg)
         
-        # Frame wewnętrzny na przyciskach (na Canvas)
-        toolbar = tk.Frame(toolbar_canvas, bg=colors['layer1_bg'], height=50)
+        # Frame wewnętrzny na przyciskach (na Canvas) - transparent (używa bg toolbara)
+        toolbar = tk.Frame(toolbar_canvas, bg=colors['background'], height=50)
         toolbar_canvas.create_window(5, 5, window=toolbar, anchor='nw', width=990)
         
-        # Kontener wewnętrzny
-        toolbar_inner = tk.Frame(toolbar, bg=colors['layer1_bg'])
+        # Kontener wewnętrzny - transparent
+        toolbar_inner = tk.Frame(toolbar, bg=colors['background'])
         toolbar_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         
         # Pomocnicza funkcja do prostego tooltipu
@@ -227,7 +296,7 @@ class EnhancedSVGViewer:
         def create_round_icon_button(parent, icon, command, tooltip_text, is_toggle=False, toggle_value=None):
             """Tworzy okrągły przycisk tylko z ikoną"""
             btn_canvas = tk.Canvas(parent, width=40, height=40,
-                                  bg=colors['layer1_bg'],
+                                  bg=colors['background'],
                                   highlightthickness=0, borderwidth=0)
             btn_canvas.pack(side=tk.LEFT, padx=3)
             
@@ -270,7 +339,7 @@ class EnhancedSVGViewer:
             return btn_canvas
         
         # LEWO: Przyciski trybu SVG (będą kontrolowane z głównego GUI)
-        mode_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        mode_frame = tk.Frame(toolbar_inner, bg=colors['background'])
         mode_frame.pack(side=tk.LEFT, fill=tk.Y)
         
         # Placeholder dla przycisków trybu - zostaną dodane przez główne GUI
@@ -284,7 +353,7 @@ class EnhancedSVGViewer:
         sep.pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
         # ŚRODEK: Zoom controls
-        zoom_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        zoom_frame = tk.Frame(toolbar_inner, bg=colors['background'])
         zoom_frame.pack(side=tk.LEFT, fill=tk.Y)
         
         create_round_icon_button(zoom_frame, "🔍", self.fit_to_window, 
@@ -296,9 +365,9 @@ class EnhancedSVGViewer:
         create_round_icon_button(zoom_frame, "🏠", self.reset_view, 
                                 "Reset widoku\nPrzywraca początkową pozycję")
         
-        # Zoom level display
+        # Zoom level display - transparent bg
         self.zoom_label = tk.Label(toolbar_inner, text="100%",
-                                   bg=colors['layer1_bg'],
+                                   bg=colors['background'],
                                    fg=colors['text'],
                                    font=('Segoe UI', 10))
         self.zoom_label.pack(side=tk.LEFT, padx=10)
@@ -308,7 +377,7 @@ class EnhancedSVGViewer:
         sep2.pack(side=tk.LEFT, fill=tk.Y, padx=10)
         
         # PRAWO: Assignment controls
-        assignment_frame = tk.Frame(toolbar_inner, bg=colors['layer1_bg'])
+        assignment_frame = tk.Frame(toolbar_inner, bg=colors['background'])
         assignment_frame.pack(side=tk.LEFT, fill=tk.Y)
         
         # Przypisz Tekst
@@ -331,17 +400,17 @@ class EnhancedSVGViewer:
             self.clear_assignment_selection,
             "Wyczyść Wybór\nUsuwa aktualny wybór\ntekstu i linii")
         
-        # Instructions / status (domyślnie: "Kliknij tekst i linię")
+        # Instructions / status (domyślnie: "Kliknij tekst i linię") - transparent bg
         self.instruction_label = tk.Label(toolbar_inner,
                                          text="Kliknij tekst i linię",
-                                         bg=colors['layer2_bg'],
+                                         bg=colors['background'],
                                          fg=colors['text'],
                                          font=('Segoe UI', 9, 'italic'))
         self.instruction_label.pack(side=tk.RIGHT, padx=10)
         
-        # Selection info na końcu (prawy róg)
+        # Selection info na końcu (prawy róg) - transparent bg
         self.selection_label = tk.Label(toolbar_inner, text="",
-                                        bg=colors['layer2_bg'],
+                                        bg=colors['background'],
                                         fg=colors['text'],
                                         font=('Segoe UI', 9))
         self.selection_label.pack(side=tk.RIGHT, padx=10)
