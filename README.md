@@ -4,6 +4,18 @@
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
+---
+
+## 🚀 **Dla Użytkowników Windows - Szybki Start**
+
+> **❓ Nie wiesz co to VSC, Python czy Git? Nie ogarniasz programowania?**  
+> **👉 [KLIKNIJ TUTAJ - Prosta Instrukcja Instalacji](INSTALACJA.md) 👈**
+>
+> Szczegółowa instrukcja krok po kroku jak zainstalować i uruchomić program w kilka minut!  
+> Po prostu sklonuj repozytorium, kliknij dwukrotnie `start_gui.bat` i gotowe! 🎉
+
+---
+
 Profesjonalna aplikacja w Pythonie do konwersji plików DXF (AutoCAD) na format SVG z inteligentnym przypisywaniem tekstów do geometrii oraz nowoczesnym interfejsem graficznym.
 
 ##  Możliwości
