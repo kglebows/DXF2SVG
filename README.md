@@ -1,139 +1,139 @@
-﻿# DXF2SVG - Interactive DXF to SVG Converter
+﻿# DXF2SVG - Interaktywny Konwerter DXF do SVG
 
 ![Python Version](https://img.shields.io/badge/python-3.13-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
-A powerful Python application for converting AutoCAD DXF files to interactive SVG format with intelligent text-to-geometry assignment and modern GUI interface.
+Profesjonalna aplikacja w Pythonie do konwersji plików DXF (AutoCAD) na format SVG z inteligentnym przypisywaniem tekstów do geometrii oraz nowoczesnym interfejsem graficznym.
 
-##  Features
+##  Możliwości
 
-###  **Multiple SVG Output Formats**
-- **Basic SVG**: Simple conversion with geometric shapes only
-- **Interactive SVG**: Click-to-assign interface for manual text assignment correction
-- **Structured SVG**: Hierarchically organized output grouped by inverters with hover tooltips
+###  **Wiele Formatów Wyjściowych SVG**
+- **Podstawowy SVG**: Prosta konwersja tylko z kształtami geometrycznymi
+- **Interaktywny SVG**: Interfejs do ręcznej korekty przypisań tekstów (kliknij aby wybrać, prawy przycisk aby przypisać)
+- **Strukturalny SVG**: Hierarchicznie zorganizowany wynik pogrupowany według falowników z tooltipami po najechaniu myszką
 
-###  **Modern GUI Interface**
-- **Unified Configuration Tab**: Dynamic layout with automatic panel width adjustment
-- **Interactive Assignment Editor**: Visual editing with left-click selection and right-click assignment
-- **Real-time Preview**: Built-in SVG viewer with zoom/pan capabilities
-- **Responsive Log Window**: Multi-threaded logging with automatic scrolling
+###  **Nowoczesny Interfejs Graficzny**
+- **Zakładka Konfiguracji**: Dynamiczny układ z automatycznym dopasowaniem szerokości panelu
+- **Edytor Przypisań**: Wizualna edycja z wyborem lewym przyciskiem i przypisaniem prawym
+- **Podgląd na Żywo**: Wbudowana przeglądarka SVG z funkcjami zoom i przesuwania
+- **Responsywne Okno Logów**: Wielowątkowe logowanie z automatycznym przewijaniem
 
-###  **Intelligent Processing**
-- **Automatic Text Assignment**: Distance-based algorithm assigns text labels to geometric segments
-- **Duplicate Detection**: Identifies and removes duplicate segments automatically
-- **Outlier Filtering**: Removes elements outside meaningful bounds for cleaner output
-- **Adaptive ViewBox**: Dynamically calculated viewBox that accommodates elements with negative coordinates
+###  **Inteligentne Przetwarzanie**
+- **Automatyczne Przypisywanie**: Algorytm oparty na odległości automatycznie przypisuje etykiety tekstowe do segmentów geometrycznych
+- **Wykrywanie Duplikatów**: Automatycznie identyfikuje i usuwa zduplikowane segmenty
+- **Filtrowanie Outlierów**: Usuwa elementy poza znaczącymi granicami dla czystszego wyniku
+- **Adaptacyjny ViewBox**: Dynamicznie obliczany viewBox, który obsługuje elementy z ujemnymi współrzędnymi
 
-###  **Advanced Capabilities**
-- **Custom Text Parsing**: Configurable regex patterns for extracting station IDs and inverter numbers
-- **Batch Processing**: Convert multiple DXF files with a single configuration
-- **Interactive Tooltips**: Hover over elements in Structured SVG to view metadata (segment IDs, structural IDs)
-- **Configuration Presets**: Save and load `.cfg` files for different DXF formats
+###  **Zaawansowane Funkcje**
+- **Własne Parsowanie Tekstów**: Konfigurowalne wzorce regex do wyodrębniania ID stacji i numerów falowników
+- **Przetwarzanie Wsadowe**: Konwertuj wiele plików DXF za pomocą jednej konfiguracji
+- **Interaktywne Tooltips**: Najedź na elementy w Strukturalnym SVG aby zobaczyć metadane (ID segmentów, ID strukturalne)
+- **Presety Konfiguracji**: Zapisuj i wczytuj pliki `.cfg` dla różnych formatów DXF
 
-##  Quick Start
+##  Szybki Start
 
-### Prerequisites
+### Wymagania
 
-- Python 3.13 or higher
-- pip package manager
+- Python 3.13 lub wyższy
+- pip (menedżer pakietów)
 
-### Installation
+### Instalacja
 
-1. Clone the repository:
+1. Sklonuj repozytorium:
 ```bash
-git clone https://github.com/yourusername/DXF2SVG.git
+git clone https://github.com/kglebows/DXF2SVG.git
 cd DXF2SVG
 ```
 
-2. Install required dependencies:
+2. Zainstaluj wymagane zależności:
 ```bash
 pip install -r requirements.txt
 ```
 
-### Basic Usage
+### Uruchomienie
 
-#### GUI Mode (Recommended)
+#### Tryb GUI (Zalecany)
 
-Launch the interactive GUI:
+Uruchom interfejs graficzny:
 ```bash
 python run_interactive_gui.py
 ```
 
-Or use the batch script on Windows:
+Lub użyj skryptu wsadowego na Windows:
 ```bash
 start_gui.bat
 ```
 
-#### Command Line Mode
+#### Tryb Linii Poleceń
 
 ```python
 from src.core.dxf2svg import DXF2SVG
 
-# Load DXF file
+# Wczytaj plik DXF
 dxf = DXF2SVG('input.dxf', 'config.cfg')
 
-# Process and generate SVG
+# Przetwarzaj i generuj SVG
 dxf.extract_texts()
 dxf.extract_polylines()
 dxf.assign_texts_to_strings()
 dxf.generate_svg('output.svg')
 ```
 
-##  User Guide
+##  Instrukcja Użytkowania
 
-### Step 1: Launch Application
-Run `run_interactive_gui.py` to start the GUI. The main window contains three tabs:
-- **Configuration**: Set up layers, station IDs, and output formats
-- **Assignment Editor**: Manually correct text assignments
-- **SVG Viewer**: Preview generated SVG files
+### Krok 1: Uruchom Aplikację
+Uruchom `run_interactive_gui.py` aby otworzyć GUI. Główne okno zawiera trzy zakładki:
+- **Konfiguracja**: Ustawienia warstw, ID stacji i formatów wyjściowych
+- **Edytor Przypisań**: Ręczna korekta przypisań tekstów
+- **Przeglądarka SVG**: Podgląd wygenerowanych plików SVG
 
-### Step 2: Configure DXF Settings
-In the **Configuration Tab**:
-1. Click **Select DXF File** to load your AutoCAD file
-2. Configure layer names:
-   - **Polyline Layer**: Layer containing geometric segments (e.g., `@IDE_STRING_1`)
-   - **Text Layer**: Layer containing text labels (e.g., `@IDE_STRING_1_TXT`)
-3. Set **Station ID** (e.g., `LES1`, `LES2`)
+### Krok 2: Konfiguracja Ustawień DXF
+W zakładce **Konfiguracja**:
+1. Kliknij **Wybierz Plik DXF** aby wczytać plik AutoCAD
+2. Skonfiguruj nazwy warstw:
+   - **Warstwa Polilinii**: Warstwa zawierająca segmenty geometryczne (np. `@IDE_STRING_1`)
+   - **Warstwa Tekstów**: Warstwa zawierająca etykiety tekstowe (np. `@IDE_STRING_1_TXT`)
+3. Ustaw **ID Stacji** (np. `LES1`, `LES2`)
 
-### Step 3: Configure Text Parsing
-Define regex patterns for extracting metadata from text labels:
-- **Station ID Pattern**: e.g., `([A-Z]+\d+)` to extract `LES1` from `LES1-INV01`
-- **Inverter Pattern**: e.g., `INV(\d+)` to extract `01` from `LES1-INV01`
+### Krok 3: Konfiguracja Parsowania Tekstów
+Zdefiniuj wzorce regex do wyodrębniania metadanych z etykiet tekstowych:
+- **Wzorzec ID Stacji**: np. `([A-Z]+\d+)` aby wyodrębnić `LES1` z `LES1-INV01`
+- **Wzorzec Falownika**: np. `INV(\d+)` aby wyodrębnić `01` z `LES1-INV01`
 
-### Step 4: Set Output Format
-Choose SVG generation mode:
-- **Interactive**: Generates `interactive_assignment.svg` with assignment controls
-- **Structured**: Creates hierarchically organized SVG grouped by inverters with tooltips
+### Krok 4: Ustaw Format Wyjściowy
+Wybierz tryb generowania SVG:
+- **Interaktywny**: Generuje `interactive_assignment.svg` z kontrolkami przypisań
+- **Strukturalny**: Tworzy hierarchicznie zorganizowany SVG pogrupowany według falowników z tooltipami
 
-### Step 5: Process DXF
-Click **Load and Process DXF** button:
-1. Application extracts texts and polylines
-2. Automatic assignment runs (distance-based algorithm)
-3. Interactive SVG is generated
-4. Progress bar shows conversion status
+### Krok 5: Przetwórz DXF
+Kliknij przycisk **Wczytaj i Przetwórz DXF**:
+1. Aplikacja wyodrębni teksty i polilinie
+2. Uruchomi się automatyczne przypisywanie (algorytm oparty na odległości)
+3. Zostanie wygenerowany interaktywny SVG
+4. Pasek postępu pokaże status konwersji
 
-### Step 6: Refine Assignments (Optional)
-Switch to **Assignment Editor** tab:
-1. View the interactive SVG with colored elements:
-   - **Green**: Assigned segments
-   - **Red**: Unassigned texts
-   - **Gray**: Unassigned segments
-2. **Left-click** to select text or segment
-3. **Right-click** on target element to assign
-4. Use **Clear Assignment** button to remove incorrect assignments
+### Krok 6: Popraw Przypisania (Opcjonalnie)
+Przejdź do zakładki **Edytor Przypisań**:
+1. Zobacz interaktywny SVG z kolorowanymi elementami:
+   - **Zielony**: Przypisane segmenty
+   - **Czerwony**: Nieprzypisane teksty
+   - **Szary**: Nieprzypisane segmenty
+2. **Lewy przycisk myszy** - zaznacz tekst lub segment
+3. **Prawy przycisk myszy** na docelowym elemencie - przypisz
+4. Użyj przycisku **Wyczyść Przypisanie** aby usunąć nieprawidłowe przypisania
 
-### Step 7: Generate Final SVG
-In **Configuration Tab**, click **Generate Structured SVG**:
-- Outputs final SVG with:
-  - Hierarchical grouping by inverters
-  - Hover tooltips showing metadata
-  - Clean viewBox encompassing all elements
-  - Duplicate-free geometry
+### Krok 7: Generuj Finalny SVG
+W zakładce **Konfiguracja**, kliknij **Generuj Strukturalny SVG**:
+- Wyjściowy SVG będzie zawierał:
+  - Hierarchiczne grupowanie według falowników
+  - Tooltips po najechaniu pokazujące metadane
+  - Czysty viewBox obejmujący wszystkie elementy
+  - Geometrię bez duplikatów
 
-##  Configuration File Format
+##  Format Pliku Konfiguracyjnego
 
-Configuration files use `.cfg` format with INI-style sections:
+Pliki konfiguracyjne używają formatu `.cfg` ze stylu INI:
 
 ```ini
 [Layers]
@@ -163,101 +163,81 @@ save_interactive = True
 save_structured = True
 ```
 
-### Configuration Sections
+### Sekcje Konfiguracji
 
-- **[Layers]**: DXF layer names for polylines and text
-- **[Station]**: Station identifier for filtering texts
-- **[Format]**: Text parsing rules (delimiter, prefix handling)
-- **[Search]**: Regex patterns for extracting IDs
-- **[Visual]**: SVG styling parameters
-- **[Files]**: Output directory and generation flags
+- **[Layers]**: Nazwy warstw DXF dla polilinii i tekstów
+- **[Station]**: Identyfikator stacji do filtrowania tekstów
+- **[Format]**: Reguły parsowania tekstów (delimiter, obsługa prefiksów)
+- **[Search]**: Wzorce regex do wyodrębniania ID
+- **[Visual]**: Parametry stylizacji SVG
+- **[Files]**: Katalog wyjściowy i flagi generowania
 
-##  SVG Output Types
+##  Typy Wyjściowych SVG
 
-### Interactive SVG
-- Purpose: Manual assignment correction interface
-- Features:
-  - Click-to-select elements
-  - Right-click to assign text to segment
-  - Color-coded status (green=assigned, red=unassigned text, gray=unassigned segment)
-  - Embedded JavaScript for interactivity
-- Use Case: Correcting automatic assignment errors
+### Interaktywny SVG
+- **Cel**: Interfejs do ręcznej korekty przypisań
+- **Funkcje**:
+  - Kliknij aby wybrać elementy
+  - Prawy przycisk aby przypisać tekst do segmentu
+  - Kolorowe statusy (zielony=przypisany, czerwony=nieprzypisany tekst, szary=nieprzypisany segment)
+  - Wbudowany JavaScript dla interaktywności
+- **Zastosowanie**: Korygowanie błędów automatycznego przypisywania
 
-### Structured SVG
-- Purpose: Final production output
-- Features:
-  - Hierarchical `<g>` groups by inverter ID
-  - Custom data attributes: `data-structural-id`, `data-string-id`, `data-segment-id`
-  - Hover tooltips showing element metadata
-  - Adaptive viewBox for complete visibility
-  - Clean, validated SVG structure
-- Use Case: Documentation, web integration, archival
+### Strukturalny SVG
+- **Cel**: Finalny produkcyjny wynik
+- **Funkcje**:
+  - Hierarchiczne grupy `<g>` według ID falownika
+  - Niestandardowe atrybuty danych: `data-structural-id`, `data-string-id`, `data-segment-id`
+  - Tooltips po najechaniu pokazujące metadane elementu
+  - Adaptacyjny viewBox dla pełnej widoczności
+  - Czysta, zwalidowana struktura SVG
+- **Zastosowanie**: Dokumentacja, integracja webowa, archiwizacja
 
-##  Troubleshooting
+##  Rozwiązywanie Problemów
 
-### DXF File Not Loading
-- **Error**: "Cannot open DXF file"
-- **Solution**: Verify file path and ensure DXF is not corrupted. Check DXF version compatibility (R12-R2018 supported).
+### Plik DXF Się Nie Wczytuje
+- **Błąd**: "Cannot open DXF file"
+- **Rozwiązanie**: Sprawdź ścieżkę do pliku i upewnij się, że DXF nie jest uszkodzony. Sprawdź kompatybilność wersji DXF (obsługiwane R12-R2018).
 
-### No Automatic Assignments
-- **Error**: "0 texts assigned automatically"
-- **Solution**: 
-  - Check that station ID matches text content
-  - Verify regex patterns in Configuration tab
-  - Ensure polyline and text layers are correct
+### Brak Automatycznych Przypisań
+- **Błąd**: "0 texts assigned automatically"
+- **Rozwiązanie**: 
+  - Sprawdź czy ID stacji pasuje do zawartości tekstów
+  - Zweryfikuj wzorce regex w zakładce Konfiguracja
+  - Upewnij się, że warstwy polilinii i tekstów są prawidłowe
 
-### Text Not Visible in SVG
-- **Error**: Text labels missing in output
-- **Solution**: 
-  - Increase `text_size` parameter in configuration
-  - Check text layer name is correct
-  - Verify texts are on the correct layer in DXF
+### Tekst Niewidoczny w SVG
+- **Błąd**: Brakujące etykiety tekstowe w wyniku
+- **Rozwiązanie**: 
+  - Zwiększ parametr `text_size` w konfiguracji
+  - Sprawdź czy nazwa warstwy tekstowej jest prawidłowa
+  - Zweryfikuj czy teksty są na właściwej warstwie w DXF
 
-### Tooltips Not Working (Structured SVG)
-- **Error**: No tooltip on hover
-- **Solution**: 
-  - Open SVG in modern browser (Chrome, Firefox, Edge)
-  - Ensure JavaScript is enabled
-  - Hover cursor must be directly over `rect` elements
+### Tooltips Nie Działają (Strukturalny SVG)
+- **Błąd**: Brak tooltip po najechaniu
+- **Rozwiązanie**: 
+  - Otwórz SVG w nowoczesnej przeglądarce (Chrome, Firefox, Edge)
+  - Upewnij się że JavaScript jest włączony
+  - Kursor musi być bezpośrednio nad elementami `rect`
 
-### ViewBox Cuts Off Elements
-- **Error**: Segments or texts clipped at edges
-- **Solution**: Application automatically calculates adaptive viewBox. If issue persists:
-  - Check for extremely large coordinate values in DXF
-  - Verify outlier filtering isn't too aggressive (`outlier_threshold` in config)
+### ViewBox Przycina Elementy
+- **Błąd**: Segmenty lub teksty przycięte na krawędziach
+- **Rozwiązanie**: Aplikacja automatycznie oblicza adaptacyjny viewBox. Jeśli problem się utrzymuje:
+  - Sprawdź czy nie ma ekstremalnie dużych wartości współrzędnych w DXF
+  - Zweryfikuj czy filtrowanie outlierów nie jest zbyt agresywne (`outlier_threshold` w konfiguracji)
 
-### GUI Panel Too Narrow/Wide
-- **Error**: Configuration cards not fully visible
-- **Solution**: Panel width adjusts automatically based on content. If scrollbar overlaps:
-  - Resize main window to trigger recalculation
-  - Check `optimal_width = max_card_width + 30` in `unified_config_tab.py`
+### Aplikacja Zawiesza się na Dużym DXF
+- **Błąd**: Błąd pamięci lub zawieszenie
+- **Rozwiązanie**:
+  - Zmniejsz rozmiar pliku DXF usuwając niepotrzebne warstwy
+  - Zwiększ rozmiar sterty Pythona: `python -X opt -W ignore run_interactive_gui.py`
+  - Sprawdź dostępność pamięci RAM w systemie
 
-### Progress Bar Doesn't Stop
-- **Error**: Progress bar continues after conversion completes
-- **Solution**: Fixed in current version. Update to latest commit if issue persists.
+##  Zaawansowane Użycie
 
-### "Wyczyść Linię" Button Uses Wrong IDs
-- **Error**: Clear line removes wrong assignments
-- **Solution**: Fixed in current version. Segment ID lookup now uses correct data structure traversal.
+### Własne Parsowanie Tekstów
 
-### Application Crashes on Large DXF
-- **Error**: Memory error or freeze
-- **Solution**:
-  - Reduce DXF file size by removing unnecessary layers
-  - Increase Python heap size: `python -X opt -W ignore run_interactive_gui.py`
-  - Check system RAM availability
-
-### Log Window Not Scrolling
-- **Error**: Log messages hidden
-- **Solution**: Log window automatically scrolls to bottom. If issue persists:
-  - Check for thread synchronization errors in console
-  - Verify `ScrolledText` widget configuration
-
-##  Advanced Usage
-
-### Custom Text Parsing
-
-Override default regex patterns for specialized DXF formats:
+Nadpisz domyślne wzorce regex dla specjalistycznych formatów DXF:
 
 ```python
 from src.config.config_manager import ConfigManager
@@ -268,9 +248,9 @@ config.set('Search', 'search_inverter_regex', r'INV#(\d+)')
 config.save()
 ```
 
-### Batch Processing
+### Przetwarzanie Wsadowe
 
-Process multiple DXF files with a single configuration:
+Przetwarzaj wiele plików DXF z jedną konfiguracją:
 
 ```python
 import os
@@ -286,133 +266,124 @@ for filename in os.listdir(input_dir):
         svg_path = os.path.join(output_dir, filename.replace('.dxf', '.svg'))
         
         dxf = DXF2SVG(dxf_path, config_file)
-        dxf.process_all()  # Extract, assign, generate
+        dxf.process_all()  # Wyodrębnij, przypisz, generuj
         dxf.save_structured_svg(svg_path)
 ```
 
-### Programmatic API
+### API Programistyczne
 
-Use DXF2SVG as a library in your Python projects:
+Użyj DXF2SVG jako biblioteki w swoich projektach Python:
 
 ```python
 from src.core.dxf2svg import DXF2SVG
 
-# Initialize with DXF file and config
+# Inicjalizuj z plikiem DXF i konfiguracją
 converter = DXF2SVG('plant_layout.dxf', 'config.cfg')
 
-# Step-by-step processing
+# Przetwarzanie krok po kroku
 texts = converter.extract_texts()
 polylines = converter.extract_polylines()
 assignments = converter.assign_texts_to_strings()
 
-# Access raw data
+# Dostęp do surowych danych
 for inverter_id, strings in converter.inverter_data.items():
     for string_id, segments in strings.items():
-        print(f"Inverter {inverter_id}, String {string_id}: {len(segments)} segments")
+        print(f"Falownik {inverter_id}, String {string_id}: {len(segments)} segmentów")
 
-# Generate custom output
+# Generuj niestandardowe wyjście
 converter.generate_interactive_svg('custom_interactive.svg')
 converter.generate_structured_svg('custom_structured.svg')
 ```
 
-##  Project Structure
+##  Struktura Projektu
 
 ```
 DXF2SVG/
  src/
-    core/                # Core conversion logic
-       dxf2svg.py       # Main DXF processor
-       config.py        # Configuration dataclass
-       geometry_utils.py # Geometric calculations
-    svg/                 # SVG generation
-       svg_generator.py # SVG writer with adaptive viewBox
-    gui/                 # User interface
-       interactive_gui_new.py # Main application window
-       unified_config_tab.py  # Configuration panel
-       enhanced_svg_viewer.py # Interactive SVG viewer
-       simple_svg_viewer.py   # Basic SVG renderer
-    interactive/         # Assignment editing
-       interactive_editor.py  # Assignment editor tab
-       assignment_manager.py  # Assignment logic
-    config/              # Configuration management
-       config_manager.py # Config file I/O
-    utils/               # Utilities
-        console_logger.py # Multi-threaded logging
- configs/                 # Sample configuration files
+    core/                # Logika konwersji
+       dxf2svg.py       # Główny procesor DXF
+       config.py        # Dataclass konfiguracji
+       geometry_utils.py # Obliczenia geometryczne
+    svg/                 # Generowanie SVG
+       svg_generator.py # Generator SVG z adaptacyjnym viewBox
+    gui/                 # Interfejs użytkownika
+       interactive_gui_new.py # Główne okno aplikacji
+       unified_config_tab.py  # Panel konfiguracji
+       enhanced_svg_viewer.py # Interaktywna przeglądarka SVG
+       simple_svg_viewer.py   # Podstawowy renderer SVG
+    interactive/         # Edycja przypisań
+       interactive_editor.py  # Zakładka edytora przypisań
+       assignment_manager.py  # Logika przypisań
+    config/              # Zarządzanie konfiguracją
+       config_manager.py # I/O plików konfiguracyjnych
+    utils/               # Narzędzia
+        console_logger.py # Logowanie wielowątkowe
+ configs/                 # Przykładowe pliki konfiguracyjne
     Grabowo3.cfg
     ziec.cfg
- run_interactive_gui.py   # Main entry point
- start_gui.bat            # Windows launcher
- requirements.txt         # Python dependencies
- LICENSE                  # MIT License
- README.md                # This file
+ run_interactive_gui.py   # Główny punkt wejścia
+ start_gui.bat            # Launcher dla Windows
+ requirements.txt         # Zależności Pythona
+ LICENSE                  # Licencja MIT
+ README.md                # Ten plik
 ```
 
-##  Requirements
+##  Wymagania
 
-### Minimum Requirements
+### Minimalne Wymagania
 - Python 3.13+
 - 4 GB RAM
-- Windows 10/11, macOS 10.14+, or Linux (Ubuntu 20.04+)
+- Windows 10/11, macOS 10.14+, lub Linux (Ubuntu 20.04+)
 
-### Recommended
+### Zalecane
 - Python 3.13.1
 - 8 GB RAM
-- 1920x1080 display resolution for optimal GUI experience
+- Rozdzielczość ekranu 1920x1080 dla optymalnego doświadczenia GUI
 
-### Dependencies
-- `ezdxf>=1.3.0` - DXF file parsing
-- `svgwrite>=1.4.3` - SVG file generation
-- `tkinter` - GUI framework (included with Python)
+### Zależności
+- `ezdxf>=1.3.0` - Parsowanie plików DXF
+- `svgwrite>=1.4.3` - Generowanie plików SVG
+- `tkinter` - Framework GUI (dołączony do Pythona)
 
-Install all dependencies with:
+Zainstaluj wszystkie zależności:
 ```bash
 pip install -r requirements.txt
 ```
 
-##  Contributing
+##  Współpraca
 
-Contributions are welcome! Please follow these guidelines:
+Wkład mile widziany! Proszę postępować według tych wytycznych:
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature-name`
-3. Commit your changes: `git commit -m 'feat: add some feature'`
-4. Push to the branch: `git push origin feature/your-feature-name`
-5. Open a Pull Request
+1. Zrób fork repozytorium
+2. Utwórz gałąź funkcji: `git checkout -b feature/nazwa-funkcji`
+3. Zatwierdź zmiany: `git commit -m 'feat: dodaj funkcję'`
+4. Wypchnij do gałęzi: `git push origin feature/nazwa-funkcji`
+5. Otwórz Pull Request
 
-### Development Setup
+### Konfiguracja Deweloperska
 
 ```bash
-git clone https://github.com/yourusername/DXF2SVG.git
+git clone https://github.com/kglebows/DXF2SVG.git
 cd DXF2SVG
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # Na Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Code Style
-- Follow PEP 8 guidelines
-- Use type hints for function signatures
-- Document complex logic with inline comments
-- Write descriptive commit messages (conventional commits format)
+### Styl Kodu
+- Przestrzegaj wytycznych PEP 8
+- Używaj type hints dla sygnatur funkcji
+- Dokumentuj złożoną logikę komentarzami inline
+- Pisz opisowe komunikaty commit (format conventional commits)
 
-##  Roadmap
+##  Licencja
 
-- [ ] Export to PDF format
-- [ ] Multi-language support (Polish, German, Spanish)
-- [ ] Command-line batch processing tool
-- [ ] DXF layer auto-detection
-- [ ] Cloud-based conversion API
-- [ ] Real-time collaboration for assignment editing
-
-##  License
-
-This project is licensed under the MIT License - see below for details:
+Ten projekt jest licencjonowany na licencji MIT:
 
 ```
 MIT License
 
-Copyright (c) 2024 DXF2SVG Contributors
+Copyright (c) 2024-2025 Konrad Głębowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -433,19 +404,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-##  Support
+##  Wsparcie
 
-For questions, bug reports, or feature requests:
-- **Issues**: [GitHub Issues](https://github.com/yourusername/DXF2SVG/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/DXF2SVG/discussions)
-- **Email**: support@dxf2svg.com
+W razie pytań, zgłoszeń błędów lub próśb o funkcje:
+- **Issues**: [GitHub Issues](https://github.com/kglebows/DXF2SVG/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/kglebows/DXF2SVG/discussions)
 
-##  Acknowledgments
+##  Podziękowania
 
-- [ezdxf](https://github.com/mozman/ezdxf) - Excellent DXF parsing library
-- [svgwrite](https://github.com/mozman/svgwrite) - Robust SVG generation
-- Python Tkinter community for GUI best practices
+- [ezdxf](https://github.com/mozman/ezdxf) - Doskonała biblioteka do parsowania DXF
+- [svgwrite](https://github.com/mozman/svgwrite) - Solidne generowanie SVG
+- Społeczność Python Tkinter za najlepsze praktyki GUI
 
 ---
 
-**Made with  by the DXF2SVG Team**
+**Stworzone przez Konrada Głębowskiego **
