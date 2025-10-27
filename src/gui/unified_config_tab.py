@@ -320,11 +320,12 @@ CONFIG_PARAMETERS = {
 class UnifiedConfigTab(ttk.Frame):
     """Zunifikowana zakładka konfiguracji z wszystkimi parametrami"""
     
-    def __init__(self, parent, config_manager: ConfigManager, on_convert_callback: Callable = None):
+    def __init__(self, parent, config_manager: ConfigManager, on_convert_callback: Callable = None, main_app=None):
         super().__init__(parent)
         
         self.config_manager = config_manager
         self.on_convert_callback = on_convert_callback
+        self.main_app = main_app  # Referencja do głównego okna aplikacji (InteractiveGUI)
         
         # Referencja do root window (potrzebna dla option_add)
         self.root = self.winfo_toplevel()
@@ -540,6 +541,19 @@ class UnifiedConfigTab(ttk.Frame):
         self.create_parameters_sections()
         self.create_action_buttons()
         
+        # Zaplanuj dynamiczne dostosowanie szerokości panelu z retry mechanism
+        def try_adjust(attempt=0):
+            if attempt < 5:  # Maksymalnie 5 prób
+                try:
+                    self.adjust_panel_width()
+                except Exception as e:
+                    print(f"⚠️ Próba {attempt+1} dostosowania szerokości nie powiodła się: {e}")
+                    self.after(200, lambda: try_adjust(attempt + 1))
+            else:
+                print("⚠️ Nie udało się dostosować szerokości panelu po 5 próbach")
+        
+        self.after(500, lambda: try_adjust(0))  # Zwiększone opóźnienie do 500ms
+        
     def create_header(self):
         """Nagłówek z wyborem konfiguracji - kompaktowy w jednej linii"""
         card = self.create_bento_card(self.scrollable_frame, None)  # Bez tytułu
@@ -630,9 +644,9 @@ class UnifiedConfigTab(ttk.Frame):
     
     def create_bento_card(self, parent, title=None):
         """Tworzy kartę z prawdziwymi zaokrąglonymi rogami przez Canvas"""
-        # Outer frame dla padding
+        # Outer frame dla padding - zmniejszony padding
         outer = tk.Frame(parent, bg=self.colors['layer1_bg'])
-        outer.pack(fill=tk.X, padx=15, pady=3)
+        outer.pack(fill=tk.X, padx=10, pady=3)  # Zmniejszony z 15 na 10
         
         # Canvas container
         canvas_container = tk.Frame(outer, bg=self.colors['layer1_bg'])
@@ -643,22 +657,22 @@ class UnifiedConfigTab(ttk.Frame):
                                highlightthickness=0, borderwidth=0)
         card_canvas.pack(fill=tk.X)
         
-        # Frame dla zawartości
+        # Frame dla zawartości - zmniejszony padding
         content = tk.Frame(card_canvas, bg=self.colors['layer2_bg'])
-        content.pack(fill=tk.X, padx=15, pady=10)
+        content.pack(fill=tk.X, padx=12, pady=8)  # Zmniejszony z 15,10 na 12,8
         
         if title:
             title_label = tk.Label(content, text=title, 
                                   bg=self.colors['layer2_bg'],
                                   fg=self.colors['text'],
                                   font=('Segoe UI', 10, 'bold'))
-            title_label.pack(anchor=tk.W, pady=(0, 8))
+            title_label.pack(anchor=tk.W, pady=(0, 6))  # Zmniejszony z 8 na 6
         
         # Funkcja do rysowania zaokrąglonego tła po update
         def draw_rounded_bg(event=None):
             content.update_idletasks()
-            width = content.winfo_reqwidth() + 30  # padding
-            height = content.winfo_reqheight() + 20  # padding
+            width = content.winfo_reqwidth() + 24  # Zmniejszony padding z 30 na 24
+            height = content.winfo_reqheight() + 16  # Zmniejszony z 20 na 16
             
             card_canvas.configure(width=width, height=height)
             card_canvas.delete('all')
@@ -668,8 +682,8 @@ class UnifiedConfigTab(ttk.Frame):
                                    fill=self.colors['layer2_bg'],
                                    outline='', width=0)
             
-            # Umieść content na canvas
-            card_canvas.create_window(15, 10, window=content, anchor='nw')
+            # Umieść content na canvas - dostosuj do nowych wartości
+            card_canvas.create_window(12, 8, window=content, anchor='nw')  # 12,8 zamiast 15,10
         
         # Bind do rysowania po załadowaniu
         content.bind('<Configure>', draw_rounded_bg)
@@ -998,10 +1012,10 @@ class UnifiedConfigTab(ttk.Frame):
     def create_parameter_field(self, parent, param_name: str, param_config: Dict):
         """Tworzy pojedyncze pole parametru w ciemnym stylu"""
         row = tk.Frame(parent, bg=self.colors['layer2_bg'])
-        row.pack(fill=tk.X, pady=2)  # Zmniejszony odstęp między polami
+        row.pack(fill=tk.X, pady=1)  # Zmniejszony odstęp z 2 na 1
         
-        # Label
-        self.create_label(row, param_config['label'] + ":", width=30).pack(side=tk.LEFT)
+        # Label z jeszcze mniejszą szerokością - maksymalne zagęszczenie
+        self.create_label(row, param_config['label'] + ":", width=22).pack(side=tk.LEFT, padx=(0, 4))  # 22 zamiast 25, padx=4 zamiast 5
         
         # Pole w zależności od typu
         param_type = param_config['type']
@@ -1162,30 +1176,34 @@ class UnifiedConfigTab(ttk.Frame):
         progress_outer = tk.Frame(action_outer, bg=self.colors['layer1_bg'])
         progress_outer.pack(fill=tk.X, pady=(10, 5))
         
-        # Canvas dla zaokrąglonego progress bar
-        progress_canvas = tk.Canvas(progress_outer, height=8, 
+        # Canvas dla zaokrąglonego progress bar z animacją
+        self.progress_canvas = tk.Canvas(progress_outer, height=8, 
                                    bg=self.colors['layer1_bg'],
                                    highlightthickness=0, borderwidth=0)
-        progress_canvas.pack(fill=tk.X)
+        self.progress_canvas.pack(fill=tk.X)
+        
+        self.progress_bar_rect = None
+        self.progress_bar_x = 0
+        self.progress_animating = False
         
         # Zaokrąglone tło progress bar
         def draw_progress_bg(event=None):
-            width = progress_canvas.winfo_width()
+            width = self.progress_canvas.winfo_width()
             if width < 10:
                 width = 400  # fallback
-            progress_canvas.configure(width=width)
-            progress_canvas.delete('all')
-            create_rounded_rectangle(progress_canvas, 0, 0, width, 8,
+            self.progress_canvas.configure(width=width)
+            self.progress_canvas.delete('bg')
+            create_rounded_rectangle(self.progress_canvas, 0, 0, width, 8,
                                    radius=8, fill=self.colors['layer2_bg'],
-                                   outline='', width=0)
+                                   outline='', width=0, tags='bg')
         
-        progress_canvas.bind('<Configure>', draw_progress_bg)
-        progress_canvas.after(50, draw_progress_bg)
+        self.progress_canvas.bind('<Configure>', draw_progress_bg)
+        self.progress_canvas.after(50, draw_progress_bg)
         
-        # Standardowy progressbar (niestety nie ma pełnej kontroli nad zaokrągleniami)
+        # Standardowy progressbar (backup, niewidoczny)
         self.progress = ttk.Progressbar(progress_outer, mode='indeterminate',
                                        style='TProgressbar')
-        # Ukryty, użyjemy canvas do wizualizacji
+        # Ukryty, użyjemy canvas do animacji
         
         # Status
         self.status_label = tk.Label(action_outer, text="Gotowy do konwersji",
@@ -1193,6 +1211,55 @@ class UnifiedConfigTab(ttk.Frame):
                                      fg=self.colors['text_dim'],
                                      font=('Segoe UI', 9))
         self.status_label.pack(pady=(5, 0))
+        
+    def animate_progress(self):
+        """Animuj progress bar - ruch w prawo"""
+        if not self.progress_animating:
+            return
+            
+        width = self.progress_canvas.winfo_width()
+        if width < 10:
+            width = 400
+        
+        bar_width = 80
+        
+        # Usuń poprzedni prostokąt
+        if self.progress_bar_rect:
+            self.progress_canvas.delete(self.progress_bar_rect)
+        
+        # Rysuj nowy prostokąt (zaokrąglony)
+        self.progress_bar_rect = create_rounded_rectangle(
+            self.progress_canvas,
+            self.progress_bar_x, 0,
+            self.progress_bar_x + bar_width, 8,
+            radius=8,
+            fill=self.colors['accent'],
+            outline='',
+            width=0
+        )
+        
+        # Przesuń pozycję
+        self.progress_bar_x += 5
+        if self.progress_bar_x > width:
+            self.progress_bar_x = -bar_width
+        
+        # Następna klatka
+        if self.progress_animating:
+            self.progress_canvas.after(30, self.animate_progress)
+    
+    def start_progress(self):
+        """Rozpocznij animację progress bara"""
+        if not self.progress_animating:
+            self.progress_animating = True
+            self.progress_bar_x = 0
+            self.animate_progress()
+    
+    def stop_progress(self):
+        """Zatrzymaj animację progress bara"""
+        self.progress_animating = False
+        if self.progress_bar_rect:
+            self.progress_canvas.delete(self.progress_bar_rect)
+            self.progress_bar_rect = None
         
     # === Callback functions ===
     
@@ -1413,7 +1480,7 @@ class UnifiedConfigTab(ttk.Frame):
         if self.on_convert_callback:
             # Wyłącz przycisk i pokaż progress
             self.convert_btn.config(state='disabled')
-            self.progress.start()
+            self.start_progress()  # Użyj nowej animacji
             self.status_label.config(text="🔄 Konwersja w toku...", foreground='blue')
             
             # Uruchom konwersję
@@ -1517,7 +1584,72 @@ TOLERANCJE:
 • MAX_DISTANCE - max odległość dla auto-przypisania
 """
         messagebox.showinfo("Wymagania warstw DXF", info)
+    
+    def adjust_panel_width(self):
+        """Dynamicznie dostosowuje szerokość panelu lewego do zawartości"""
+        try:
+            print("📐 Rozpoczęcie dostosowania szerokości panelu...")
+            
+            # Znajdź Notebook (bezpośredni parent)
+            notebook = self.master
+            print(f"📐 Notebook: {notebook}")
+            
+            # Znajdź Frame który jest parent Notebook (control_frame)
+            control_frame = notebook.master
+            print(f"📐 Control Frame: {control_frame}")
+            
+            # Znajdź PanedWindow który zawiera control_frame
+            paned_window = control_frame.master
+            print(f"📐 PanedWindow: {paned_window}, typ: {type(paned_window)}")
+            
+            if not isinstance(paned_window, ttk.PanedWindow):
+                print(f"⚠️ Parent nie jest PanedWindow! Typ: {type(paned_window)}")
+                return
+            
+            # Odczekaj aż wszystkie widgety będą gotowe
+            self.scrollable_frame.update_idletasks()
+            
+            # Oblicz wymaganą szerokość na podstawie zawartości
+            required_width = self.scrollable_frame.winfo_reqwidth()
+            print(f"📐 Wymagana szerokość scrollable_frame: {required_width}px")
+            
+            # Sprawdź szerokości wszystkich kart
+            max_card_width = 0
+            for child in self.scrollable_frame.winfo_children():
+                child.update_idletasks()
+                child_width = child.winfo_reqwidth()
+                print(f"📐   - Child: {child.winfo_class()}, width: {child_width}px")
+                max_card_width = max(max_card_width, child_width)
+            
+            print(f"📐 Maksymalna szerokość karty: {max_card_width}px")
+            
+            # Użyj maksymalnej szerokości karty + margines 30px na scrollbar i padding
+            optimal_width = max_card_width + 30
+            
+            # Ogranicz do rozsądnych wartości (min 380px, max 580px)
+            optimal_width = max(380, min(580, optimal_width))
+            print(f"📐 Finalna szerokość panelu: {optimal_width}px (karta: {max_card_width}px + 30px margines)")
+            
+            # Wywołaj metodę set_left_panel_width z głównej aplikacji
+            if self.main_app and hasattr(self.main_app, 'set_left_panel_width'):
+                self.main_app.set_left_panel_width(optimal_width)
+            else:
+                # Fallback - ustaw bezpośrednio
+                try:
+                    control_frame.update_idletasks()
+                    paned_window.sashpos(0, optimal_width)
+                    console.success(f"✅ Dostosowano szerokość panelu (fallback): {optimal_width}px")
+                except Exception as e2:
+                    print(f"⚠️ Nie udało się ustawić sash: {e2}")
+            
+            print(f"✅ Obliczono szerokość panelu: {optimal_width}px (max karta: {max_card_width}px)")
+            
+        except Exception as e:
+            import traceback
+            print(f"⚠️ Błąd dostosowania szerokości panelu: {e}")
+            traceback.print_exc()
         
     def show_param_info(self, label: str, description: str):
         """Pokaż info o parametrze"""
         messagebox.showinfo(label, description)
+

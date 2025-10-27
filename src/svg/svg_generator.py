@@ -366,7 +366,7 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     
     # Tworzenie SVG z większymi rozmiarami dla lepszej czytelności
     # WAŻNE: Wyłączamy walidację aby móc używać atrybutów data-*
-    dwg = svgwrite.Drawing(output_path, size=(f"{width}px", f"{height}px"), debug=False)
+    dwg = svgwrite.Drawing(output_path, size=(f"{width}px", f"{height}px"), profile='tiny', debug=False)
     
     console.info("Rysowanie przypisanych elementów")
     
@@ -556,7 +556,8 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             stroke_width=config.MPTT_HEIGHT
         )
         # Dodaj atrybuty data-* bezpośrednio do elementu
-        line_element.attribs['data-segment-id'] = str(segment_id) if segment_id else str(unassigned_count)
+        # ZAWSZE używaj prawdziwego segment_id, nie unassigned_count!
+        line_element.attribs['data-segment-id'] = str(segment_id) if segment_id else ''
         line_element.attribs['data-svg-number'] = str(global_segment_number)
         unassigned_segments_group.add(line_element)
         
@@ -728,18 +729,78 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
     scaled_width = data_width * scale_factor
     scaled_height = data_height * scale_factor
     
+    # Dodaj dodatkowy margines do viewBox aby upewnić się że wszystko jest widoczne
+    # (elementy jak stroke, rectangle height mogą wykraczać poza obliczone granice)
+    viewbox_padding = 20  # pixels
+    viewbox_width = scaled_width + viewbox_padding * 2
+    viewbox_height = scaled_height + viewbox_padding * 2
+    
     # Funkcje skalowania do zadanej rozdzielczości
-    def scale_x(x): return (x - min_x) * scale_factor
-    def scale_y(y): return scaled_height - ((y - min_y) * scale_factor)  # Odwrócenie osi Y
+    # Uwzględnij padding w transformacji - wszystkie koordynaty będą >= viewbox_padding
+    def scale_x(x): return (x - min_x) * scale_factor + viewbox_padding
+    def scale_y(y): return viewbox_height - viewbox_padding - ((y - min_y) * scale_factor)  # Odwrócenie osi Y z paddingiem
 
     console.processing("Tworzenie strukturalnego dokumentu SVG")
+    
+    # KROK 1: Oblicz rzeczywiste granice WSZYSTKICH elementów które będą wyrenderowane
+    # Iteruj przez wszystkie segmenty aby znaleźć min/max współrzędnych w przestrzeni SVG
+    console.processing("Obliczanie rzeczywistych granic wyrenderowanych elementów")
+    rendered_min_x = float('inf')
+    rendered_max_x = float('-inf')
+    rendered_min_y = float('inf')
+    rendered_max_y = float('-inf')
+    
+    for inv_id, strings in inverter_data.items():
+        for str_id, segments in strings.items():
+            for seg in segments:
+                x1, y1 = seg['start']
+                x2, y2 = seg['end']
+                y_val = min(y1, y2)
+                
+                # Oblicz pozycje w SVG
+                segment_width = abs(x2 - x1)
+                if segment_width > 2:
+                    gap = segment_width * 0.01
+                    actual_width = segment_width - gap
+                    x_start = min(x1, x2) + gap/2
+                else:
+                    actual_width = segment_width
+                    x_start = min(x1, x2)
+                
+                segment_height = config.MPTT_HEIGHT * scale_factor
+                
+                # Przekształć współrzędne do przestrzeni SVG
+                svg_x = scale_x(x_start)
+                svg_y = scale_y(y_val) - segment_height/2
+                svg_width = actual_width * scale_factor
+                svg_height = segment_height
+                
+                # Aktualizuj granice
+                rendered_min_x = min(rendered_min_x, svg_x)
+                rendered_max_x = max(rendered_max_x, svg_x + svg_width)
+                rendered_min_y = min(rendered_min_y, svg_y)
+                rendered_max_y = max(rendered_max_y, svg_y + svg_height)
+    
+    # Dodaj padding do rzeczywistych granic
+    final_padding = 20
+    final_min_x = rendered_min_x - final_padding
+    final_min_y = rendered_min_y - final_padding
+    final_width = (rendered_max_x - rendered_min_x) + 2 * final_padding
+    final_height = (rendered_max_y - rendered_min_y) + 2 * final_padding
+    
+    logger.info(f"Rzeczywiste granice elementów: X[{rendered_min_x:.1f}, {rendered_max_x:.1f}], Y[{rendered_min_y:.1f}, {rendered_max_y:.1f}]")
+    logger.info(f"ViewBox z paddingiem: {final_min_x:.1f} {final_min_y:.1f} {final_width:.1f} {final_height:.1f}")
+    
+    # KROK 2: Utwórz SVG z viewBox dopasowanym do rzeczywistych granic
     # Twórz SVG w zadanej rozdzielczości z viewBox dla dobrego skalowania
     dwg = svgwrite.Drawing(
         output_path, 
         size=(f"{config.SVG_WIDTH}px", f"{config.SVG_HEIGHT}px"),
-        viewBox=f"0 0 {scaled_width} {scaled_height}"
+        viewBox=f"{final_min_x} {final_min_y} {final_width} {final_height}",
+        profile='tiny',  # Redukuj walidację, aby umożliwić custom data-* attributes dla tooltipów
+        debug=False
     )
-    logger.info(f"Generowanie strukturalnego SVG: {config.SVG_WIDTH}x{config.SVG_HEIGHT}px, dane: {scaled_width:.1f}x{scaled_height:.1f}, skala: {scale_factor:.2f}")
+    logger.info(f"Generowanie strukturalnego SVG: {config.SVG_WIDTH}x{config.SVG_HEIGHT}px, viewBox: {final_min_x:.1f} {final_min_y:.1f} {final_width:.1f}x{final_height:.1f}, skala: {scale_factor:.2f}")
     
     # Najpierw przeanalizuj wszystkie stringi i pogrupuj według strukturalnych ID falowników
     console.processing("Analiza strukturalnych ID i grupowanie według falowników")
@@ -826,14 +887,26 @@ def generate_structured_svg(inverter_data: Dict, texts: List, unassigned_texts: 
                 # Utworz prostokąt reprezentujący segment - wysokość używa MPTT_HEIGHT
                 # ID pozostaje czyste bez dodawania _seg0 itp.
                 segment_height = config.MPTT_HEIGHT * scale_factor  # Użyj konfigurowalnej wysokości
-                inv_group.add(dwg.rect(
+                
+                # Pobierz segment_id przed utworzeniem prostokąta
+                segment_id = seg.get('id')
+                
+                rect = dwg.rect(
                     insert=(scale_x(x_start), scale_y(y_val) - segment_height/2),
                     size=(actual_width * scale_factor, segment_height),
                     fill=config.ASSIGNED_SEGMENT_COLOR,
                     stroke="black",
                     stroke_width=0.1 * scale_factor,
                     id=structural_id
-                ))
+                )
+                
+                # Dodaj custom atrybuty BEZPOŚREDNIO do attribs (omija walidację)
+                rect.attribs['data-string-id'] = str_id
+                rect.attribs['data-structural-id'] = structural_id
+                if segment_id:
+                    rect.attribs['data-segment-id'] = str(segment_id)
+                
+                inv_group.add(rect)
             strings_drawn += 1
         dwg.add(inv_group)
     

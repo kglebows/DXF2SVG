@@ -468,30 +468,35 @@ class InteractiveGUI:
         except:
             pass
         
-        # Panel lewy z zakładkami (sterowanie) - stała szerokość początkowa 670px (480 + 40%)
-        self.control_frame = ttk.Frame(self.main_paned, width=670)
+        # Panel lewy z zakładkami (sterowanie) - szerokość będzie dynamicznie dostosowana
+        self.control_frame = ttk.Frame(self.main_paned, width=400)  # Początkowa minimalna szerokość
         self.main_paned.add(self.control_frame, weight=0)
         
         # Panel prawy (podgląd SVG)
         self.svg_frame = ttk.Frame(self.main_paned)
         self.main_paned.add(self.svg_frame, weight=1)
         
-        # Ustaw początkową pozycję podziału z większym opóźnieniem i retry
-        def set_sash_position(retry=0):
-            try:
-                self.main_paned.sashpos(0, 670)
-                # Sprawdź czy się ustawiło
-                if self.main_paned.sashpos(0) < 50 and retry < 3:
-                    self.root.after(200, lambda: set_sash_position(retry + 1))
-            except:
-                if retry < 3:
-                    self.root.after(200, lambda: set_sash_position(retry + 1))
-        
-        self.root.after(250, lambda: set_sash_position(0))
+        # Szerokość będzie ustawiona dynamicznie przez unified_config_tab.adjust_panel_width()
+        # NIE ustawiamy tutaj pozycji sash - pozwalamy adjust_panel_width() to zrobić
         
         # Utwórz zawartość paneli
         self.create_control_panel_with_tabs(self.control_frame)
         self.create_svg_panel(self.svg_frame)
+    
+    def set_left_panel_width(self, width):
+        """Ustaw szerokość lewego panelu przez pozycję sash w PanedWindow.
+        Ta metoda jest wywoływana przez unified_config_tab po obliczeniu optymalnej szerokości."""
+        try:
+            # Poczekaj na pełną realizację widgetów
+            self.control_frame.update_idletasks()
+            
+            # Ustaw pozycję sash (separator) w PanedWindow
+            # Pozycja sash = szerokość lewego panelu
+            self.main_paned.sashpos(0, width)
+            
+            console.success(f"✅ Ustawiono szerokość lewego panelu na: {width}px")
+        except Exception as e:
+            console.warning(f"⚠️ Nie udało się ustawić szerokości panelu: {e}")
     
     def create_control_panel_with_tabs(self, parent):
         """Panel sterowania z zakładkami (bez tytułu)"""
@@ -537,7 +542,8 @@ class InteractiveGUI:
         self.unified_config_tab = UnifiedConfigTab(
             self.notebook, 
             self.config_manager,
-            on_convert_callback=self.run_conversion_from_config
+            on_convert_callback=self.run_conversion_from_config,
+            main_app=self  # Przekaż referencję do głównej aplikacji
         )
         self.notebook.add(self.unified_config_tab, text="⚙️ Konfiguracja")
         
@@ -814,10 +820,11 @@ class InteractiveGUI:
         self.processing = False
         if hasattr(self, 'progress'):
             self.progress.stop()
-        if hasattr(self, 'conversion_status_var'):
-            self.conversion_status_var.set("⚠️ Konwersja anulowana")
         if hasattr(self, 'unified_config_tab'):
             self.unified_config_tab.convert_btn.config(state='normal')
+            self.unified_config_tab.stop_progress()  # Zatrzymaj animację
+        if hasattr(self, 'conversion_status_var'):
+            self.conversion_status_var.set("⚠️ Konwersja anulowana")
         self.log_warning("Konwersja została anulowana przez użytkownika")
     
     def on_conversion_complete(self, conversion_data):
@@ -827,6 +834,7 @@ class InteractiveGUI:
             self.progress.stop()
         if hasattr(self, 'unified_config_tab'):
             self.unified_config_tab.convert_btn.config(state='normal')
+            self.unified_config_tab.stop_progress()  # Zatrzymaj animację
         
         if conversion_data and not self.conversion_cancelled:
             # Zapisz dane konwersji
@@ -863,6 +871,7 @@ class InteractiveGUI:
             self.progress.stop()
         if hasattr(self, 'unified_config_tab'):
             self.unified_config_tab.convert_btn.config(state='normal')
+            self.unified_config_tab.stop_progress()  # Zatrzymaj animację
         if hasattr(self, 'conversion_status_var'):
             self.conversion_status_var.set("❌ Błąd konwersji")
         dxf_file = self.config_manager.get('DEFAULT_DXF_FILE', 'input.dxf')
@@ -1208,47 +1217,21 @@ class InteractiveGUI:
                                font=('Segoe UI', 10))
         status_label.pack(anchor=tk.W)
         
-        # Logi - CANVAS z zaokrąglonym tłem (warstwa 2)
-        log_outer = tk.Frame(status_frame, bg=self.colors['layer1_bg'])
+        # Logi - PROSTSZA STRUKTURA: bezpośredni Frame zamiast Canvas
+        log_outer = tk.Frame(status_frame, bg=self.colors['layer2_bg'], 
+                            relief=tk.FLAT, borderwidth=0)
         log_outer.pack(fill=tk.BOTH, expand=True, padx=15, pady=(5, 10))
         
-        log_canvas = tk.Canvas(log_outer, 
-                              bg=self.colors['layer1_bg'],
-                              highlightthickness=0, borderwidth=0)
-        log_canvas.pack(fill=tk.BOTH, expand=True)
-        
-        # Rysuj zaokrąglone tło
-        def draw_log_bg(event=None):
-            width = log_canvas.winfo_width() if log_canvas.winfo_width() > 1 else 600
-            height = log_canvas.winfo_height() if log_canvas.winfo_height() > 1 else 400
-            log_canvas.delete('bg')
-            from src.gui.unified_config_tab import create_rounded_rectangle
-            create_rounded_rectangle(log_canvas, 0, 0, width, height, radius=16,
-                                   fill=self.colors['layer2_bg'], outline='', width=0,
-                                   tags='bg')
-        
-        log_canvas.bind('<Configure>', draw_log_bg)
-        log_canvas.after(50, draw_log_bg)
-        
-        # Zawartość na Canvas
-        log_inner = tk.Frame(log_canvas, bg=self.colors['layer2_bg'])
-        log_canvas.create_window(15, 10, window=log_inner, anchor='nw')
-        
-        # Dostosuj rozmiar wewnętrznej ramki do canvas
-        def resize_log_inner(event=None):
-            canvas_width = log_canvas.winfo_width()
-            canvas_height = log_canvas.winfo_height()
-            if canvas_width > 1 and canvas_height > 1:
-                log_inner.config(width=canvas_width - 30, height=canvas_height - 20)
-        log_canvas.bind('<Configure>', lambda e: (draw_log_bg(e), resize_log_inner(e)))
-        
-        log_title = tk.Label(log_inner, text="Logi", 
+        # Tytuł logów
+        log_title = tk.Label(log_outer, text="Logi", 
                             bg=self.colors['layer2_bg'],
                             fg=self.colors['text'],
                             font=('Segoe UI', 11, 'bold'))
-        log_title.pack(anchor=tk.W, pady=(0, 5))
+        log_title.pack(anchor=tk.W, padx=10, pady=(10, 5))
         
-        self.log_text = scrolledtext.ScrolledText(log_inner, wrap=tk.WORD,
+        # ScrolledText - bezpośrednio w log_outer, bez Canvas pośrednictwa
+        # Nie podajemy width/height - pozwalamy fill=BOTH + expand=True określić rozmiar
+        self.log_text = scrolledtext.ScrolledText(log_outer, wrap=tk.WORD,
                                                   bg=self.colors['input_bg'],
                                                   fg=self.colors['text'],
                                                   insertbackground=self.colors['text'],
@@ -1258,7 +1241,7 @@ class InteractiveGUI:
                                                   highlightcolor=self.colors['layer2_bg'],
                                                   highlightbackground=self.colors['layer2_bg'],
                                                   font=('Consolas', 9))
-        self.log_text.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
     
     def create_svg_panel(self, parent):
         """Panel podglądu SVG - SVG viewer z własnym wbudowanym toolbarem"""
@@ -1624,10 +1607,15 @@ class InteractiveGUI:
                         return
                     
                     # Znajdź wszystkie teksty przypisane do tego segmentu
+                    # assigned_data ma strukturę: {inverter_id: {text_id: [segment_objs]}}
                     assigned_texts = []
-                    for text_id, assigned_segments in self.assigned_data.items():
-                        if segment_id in assigned_segments:
-                            assigned_texts.append(text_id)
+                    for inv_id, strings in self.assigned_data.items():
+                        for text_id, segments in strings.items():
+                            # Sprawdź czy któryś segment ma pasujące ID
+                            for seg in segments:
+                                if seg.get('id') == segment_id:
+                                    assigned_texts.append((text_id, inv_id))
+                                    break
                     
                     if not assigned_texts:
                         self.log_message(f"Segment #{segment_id} nie ma przypisanych tekstów.")
@@ -1636,11 +1624,11 @@ class InteractiveGUI:
                     # Wykonaj usunięcie wszystkich przypisań dla tego segmentu bez potwierdzenia
                     try:
                         removed_count = 0
-                        for text_id in assigned_texts:
+                        for text_id, inv_id in assigned_texts:
                             result = self.assignment_manager.remove_assignment(text_id, segment_id)
                             if result['success']:
                                 removed_count += 1
-                                self.log_message(f"✅ Usunięto: {text_id} <- #{segment_id}")
+                                self.log_message(f"✅ Usunięto: {text_id} (inverter: {inv_id}) <- segment #{segment_id}")
                             else:
                                 self.log_error(f"❌ {result['message']}")
                         
@@ -1655,8 +1643,8 @@ class InteractiveGUI:
                             # Odśwież listy
                             self.refresh_texts_and_segments_lists()
                             
-                            # Zawsze odśwież SVG po czyszczeniu (dla natychmiastowego feedbacku)
-                            self.regenerate_and_refresh_svg()
+                            # Zawsze odśwież SVG po czyszczeniu (FORCE bez sprawdzania assignment_changes)
+                            self.regenerate_and_refresh_svg(force=True)
                             
                             # Aktualizuj status
                             self.unassigned_status.set(f"🔴 {len(self.unassigned_texts)} nieprzypisanych tekstów, {len(self.unassigned_segments)} nieprzypisanych segmentów")
@@ -2532,10 +2520,10 @@ class InteractiveGUI:
         self.selected_segment_index = None
 
     
-    def regenerate_and_refresh_svg(self):
+    def regenerate_and_refresh_svg(self, force=False):
         """Natychmiastowa regeneracja i odświeżenie SVG po zmianie przypisania"""
         try:
-            if not self.assignment_changes['new_assignments']:
+            if not force and not self.assignment_changes['new_assignments']:
                 self.log_message("Brak zmian do zastosowania w SVG")
                 return
             
