@@ -134,4 +134,4 @@ temp/
 test/
 debug.log
 output_*.svg
-*.bat
+# *.bat - start_gui.bat jest potrzebny dla użytkowników!

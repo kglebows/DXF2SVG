@@ -21,6 +21,36 @@ def main():
         print("  -c, --config NAZWA         Załaduj plik konfiguracyjny configs/NAZWA.cfg")
         return
     
+    # Sprawdź wymagane biblioteki
+    missing_packages = []
+    try:
+        import ezdxf
+    except ImportError:
+        missing_packages.append('ezdxf')
+    
+    try:
+        import tkinter
+    except ImportError:
+        missing_packages.append('tkinter')
+    
+    try:
+        from PIL import Image
+    except ImportError:
+        missing_packages.append('Pillow')
+    
+    if missing_packages:
+        print("\n❌ BŁĄD: Brakujące wymagane biblioteki!")
+        print(f"   Nie znaleziono: {', '.join(missing_packages)}")
+        print("\n📦 Aby zainstalować wymagane biblioteki, uruchom:")
+        print("   pip install -r requirements.txt")
+        print("\nLub zainstaluj ręcznie:")
+        for pkg in missing_packages:
+            if pkg == 'tkinter':
+                print(f"   - {pkg}: zainstaluj Python z obsługą Tkinter (domyślnie w oficjalnej dystrybucji)")
+            else:
+                print(f"   - pip install {pkg}")
+        sys.exit(1)
+    
     try:
         from src.gui.interactive_gui_new import InteractiveGUI
         import argparse
