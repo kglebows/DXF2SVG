@@ -89,6 +89,10 @@ class EnhancedSVGViewer:
         # Assignment callback
         self.on_assignment_made = None
         
+        # Tooltip for hover info
+        self.hover_tooltip = None
+        self.tooltip_after_id = None
+        
         self.setup_ui()
         
     def setup_ui(self):
@@ -311,12 +315,12 @@ class EnhancedSVGViewer:
         self.assign_btn_canvas = create_round_icon_button(
             assignment_frame, "✅",
             self.assign_text_to_line,
-            "Przypisz Tekst\nKliknij tekst, potem linię,\nnaciśnij przycisk")
+            "Przypisz Tekst\n\nKliknij tekst, potem linię,\nnaciśnij przycisk lub PPM")
         self.assign_btn = self.assign_btn_canvas  # Zachowaj referencję
         
-        # Wyczyść Linię
+        # Wyczyść Linię (zmieniono ikonę z 🗑️ na 🧹)
         self.clear_line_btn_canvas = create_round_icon_button(
-            assignment_frame, "🗑️",
+            assignment_frame, "🧹",
             self.clear_line_assignments,
             "Wyczyść Linię\nUsuwa wszystkie przypisania\ndla wybranej linii")
         self.clear_line_btn = self.clear_line_btn_canvas  # Zachowaj referencję
@@ -327,9 +331,9 @@ class EnhancedSVGViewer:
             self.clear_assignment_selection,
             "Wyczyść Wybór\nUsuwa aktualny wybór\ntekstu i linii")
         
-        # Instructions / status
+        # Instructions / status (domyślnie: "Kliknij tekst i linię")
         self.instruction_label = tk.Label(toolbar_inner,
-                                         text="Kliknij tekst, potem linię, naciśnij ✅",
+                                         text="Kliknij tekst i linię",
                                          bg=colors['layer2_bg'],
                                          fg=colors['text'],
                                          font=('Segoe UI', 9, 'italic'))
@@ -613,10 +617,10 @@ class EnhancedSVGViewer:
                             # Parse assignment group from data-assignment-group attribute
                             assignment_group = elem.get('data-assignment-group', None)
                             
-                            # TYLKO line, polyline i text są klikalne (segmenty i teksty)
-                            # rect i circle (kropki, trójkąty) są renderowane ale NIE dodawane do interactive_elements
+                            # TYLKO line, polyline, rect i text są klikalne (segmenty i teksty)
+                            # rect dla structured SVG, circle (kropki, trójkąty) są renderowane ale NIE dodawane do interactive_elements
                             # Wykluczamy również text elementy z class='segment-label' lub class='text-marker'
-                            is_clickable = element_type in ['line', 'polyline', 'text']
+                            is_clickable = element_type in ['line', 'polyline', 'rect', 'text']
                             
                             # Dodatkowe filtrowanie dla text - wykluczaj etykiety
                             if element_type == 'text':
@@ -1052,6 +1056,9 @@ class EnhancedSVGViewer:
                     if found_element != self.selected_text_element and found_element != self.selected_line_element:
                         self.set_element_style(found_element, 'hover')
                 
+                # Pokaż tooltip z informacjami o elemencie
+                self.show_hover_tooltip(found_element, event.x_root, event.y_root)
+                
                 # Update cursor
                 self.canvas.config(cursor="hand2")
         else:
@@ -1060,6 +1067,102 @@ class EnhancedSVGViewer:
                 self.clear_hover_group()
                 self.hover_element = None
                 self.canvas.config(cursor="")
+                
+            # Ukryj tooltip
+            self.hide_hover_tooltip()
+    
+    def show_hover_tooltip(self, element: InteractiveElement, x: int, y: int):
+        """Pokaż tooltip z informacjami o elemencie (name, id)"""
+        # Anuluj poprzedni timer
+        if self.tooltip_after_id:
+            self.canvas.after_cancel(self.tooltip_after_id)
+            self.tooltip_after_id = None
+        
+        # Ukryj poprzedni tooltip
+        if self.hover_tooltip:
+            self.hover_tooltip.destroy()
+            self.hover_tooltip = None
+        
+        # Zaplanuj pokazanie tooltipa po 300ms
+        def show():
+            # Przygotuj tekst tooltipa
+            tooltip_text = self.get_element_info_text(element)
+            
+            if not tooltip_text:
+                return
+            
+            # Utwórz tooltip window
+            self.hover_tooltip = tk.Toplevel(self.canvas)
+            self.hover_tooltip.wm_overrideredirect(True)
+            self.hover_tooltip.wm_geometry(f"+{x + 15}+{y + 15}")  # Offset od kursora
+            
+            # Ciemny styl tooltipa
+            label = tk.Label(self.hover_tooltip, text=tooltip_text,
+                           background='#2d2d2d', foreground='#e0e0e0',
+                           font=('Consolas', 9),
+                           relief=tk.SOLID, borderwidth=1,
+                           padx=8, pady=6,
+                           justify=tk.LEFT)
+            label.pack()
+        
+        self.tooltip_after_id = self.canvas.after(300, show)
+    
+    def hide_hover_tooltip(self):
+        """Ukryj tooltip"""
+        # Anuluj timer
+        if self.tooltip_after_id:
+            self.canvas.after_cancel(self.tooltip_after_id)
+            self.tooltip_after_id = None
+        
+        # Zniszcz tooltip
+        if self.hover_tooltip:
+            self.hover_tooltip.destroy()
+            self.hover_tooltip = None
+    
+    def get_element_info_text(self, element: InteractiveElement) -> str:
+        """Pobierz tekst informacyjny o elemencie dla tooltipa"""
+        lines = []
+        attrs = element.svg_data.get('attributes', {})
+        
+        # Typ elementu
+        lines.append(f"Typ: {element.element_type}")
+        
+        # STRUCTURED SVG - pokaż structural-id i string-id
+        if 'data-structural-id' in attrs:
+            structural_id = attrs['data-structural-id']
+            lines.append(f"ID: {structural_id}")
+        
+        if 'data-string-id' in attrs:
+            string_id = attrs['data-string-id']
+            lines.append(f"Name: {string_id}")
+        
+        # ID elementu (DXF segment ID)
+        if 'data-segment-id' in attrs:
+            segment_id = attrs['data-segment-id']
+            if segment_id:
+                lines.append(f"DXF ID: #{segment_id}")
+        
+        # SVG number (numeracja w SVG - tylko w interactive)
+        if 'data-svg-number' in attrs:
+            svg_number = attrs['data-svg-number']
+            lines.append(f"SVG #: {svg_number}")
+        
+        # Name/ID z przypisania (dla tekstów i grup w interactive)
+        if element.assigned_group:
+            lines.append(f"Assigned: {element.assigned_group}")
+        elif element.element_type == 'text' and element.svg_data.get('text'):
+            text_content = element.svg_data['text'].strip()
+            if text_content:
+                lines.append(f"Text: {text_content}")
+        
+        # Dla linii - pokaż czy ma przypisane teksty (tylko w interactive)
+        if element.element_type in ['line', 'polyline'] and 'data-svg-number' in attrs:
+            if element.assigned_group:
+                lines.append(f"✅ Przypisany")
+            else:
+                lines.append("❌ Nieprzypisany")
+        
+        return "\n".join(lines)
     
     def highlight_assigned_group(self, group_id: str):
         """Highlight all elements in an assigned group using colors from config"""
@@ -1435,13 +1538,14 @@ class EnhancedSVGViewer:
     def clear_line_assignments(self):
         """Clear all assignments for selected line"""
         if not self.selected_line_element:
+            print("⚠️ Wyczyść Linię: Brak zaznaczonej linii")
             return
         
         # Extract line ID from selected line element
         line_element = self.selected_line_element
         line_id = line_element.svg_data['attributes'].get('data-segment-id')
         
-        if line_id:
+        if line_id and line_id != '':  # Sprawdź czy nie jest pusty string
             # Create clear assignment data
             clear_data = {
                 'line_element': self.selected_line_element,
@@ -1452,6 +1556,10 @@ class EnhancedSVGViewer:
             # Notify callback if available (this should update the main GUI)
             if self.on_assignment_made:
                 self.on_assignment_made(clear_data)
+            else:
+                print("⚠️ Wyczyść Linię: Brak callbacku!")
+        else:
+            print(f"⚠️ Wyczyść Linię: Segment ID jest puste (line_id='{line_id}')")
         
         # Keep line selected but clear text selection
         if self.selected_text_element:
@@ -1567,6 +1675,12 @@ class EnhancedSVGViewer:
             status += " | Gotowe do przypisania!"
         
         self.selection_label.config(text=status)
+        
+        # Zaktualizuj tekst instrukcji dynamicznie
+        if self.selected_text_element and self.selected_line_element:
+            self.instruction_label.config(text="Naciśnij ✅ lub PPM")
+        else:
+            self.instruction_label.config(text="Kliknij tekst i linię")
     
     def handle_element_click(self, element: InteractiveElement):
         """Handle clicking on an element in assignment mode"""
