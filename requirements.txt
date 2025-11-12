@@ -1,5 +1,7 @@
 # Wymagane biblioteki dla DXF2SVG
 ezdxf>=1.0.0
+svgwrite>=1.4.0
+scipy>=1.10.0
 Pillow>=10.0.0
 
 # Uwaga: tkinter jest częścią standardowej biblioteki Pythona

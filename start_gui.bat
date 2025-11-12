@@ -89,6 +89,38 @@ if %errorlevel% neq 0 (
     echo ✅ Pillow już zainstalowane
 )
 
+REM Sprawdź czy svgwrite jest zainstalowane
+python -c "import svgwrite" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo 📦 Instaluję svgwrite...
+    python -m pip install svgwrite>=1.4.0
+    if %errorlevel% neq 0 (
+        echo ❌ Nie udało się zainstalować svgwrite
+        pause
+        exit /b 1
+    )
+    echo ✅ svgwrite zainstalowane
+) else (
+    echo ✅ svgwrite już zainstalowane
+)
+
+REM Sprawdź czy scipy jest zainstalowane
+python -c "import scipy" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo.
+    echo 📦 Instaluję scipy...
+    python -m pip install scipy>=1.10.0
+    if %errorlevel% neq 0 (
+        echo ❌ Nie udało się zainstalować scipy
+        pause
+        exit /b 1
+    )
+    echo ✅ scipy zainstalowane
+) else (
+    echo ✅ scipy już zainstalowane
+)
+
 REM Sprawdź tkinter
 python -c "import tkinter" >nul 2>&1
 if %errorlevel% neq 0 (

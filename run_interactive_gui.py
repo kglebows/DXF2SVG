@@ -29,6 +29,16 @@ def main():
         missing_packages.append('ezdxf')
     
     try:
+        import svgwrite
+    except ImportError:
+        missing_packages.append('svgwrite')
+    
+    try:
+        import scipy
+    except ImportError:
+        missing_packages.append('scipy')
+    
+    try:
         import tkinter
     except ImportError:
         missing_packages.append('tkinter')
