@@ -460,11 +460,32 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
     for inv_segments in inverter_data.values():
         assigned_text_ids.update(inv_segments.keys())
     
+    # MULTI-FORMAT SUPPORT: Pobierz wszystkie station_ids z TEXT_FORMATS_LIST
+    from src.core import config as config_module
+    valid_station_ids = set()
+    text_formats_list = getattr(config_module, 'TEXT_FORMATS_LIST', [])
+    if text_formats_list:
+        for fmt in text_formats_list:
+            sid = fmt.get('station_id', '')
+            if sid:
+                valid_station_ids.add(sid)
+    else:
+        # Fallback - tylko pojedynczy station_id
+        valid_station_ids.add(station_id)
+    
     for text_data in texts:
         from src.core.config import parse_text_to_dict
         parsed = parse_text_to_dict(text_data['id'], station_id)
-        if parsed and parsed.get('station') == station_id:
-            text_id = text_data['id']
+        if parsed:
+            # Sprawdź czy text należy do któregokolwiek z formatowań
+            text_station = None
+            if 'variables' in parsed:
+                text_station = parsed.get('variables', {}).get('name', '')
+            else:
+                text_station = parsed.get('station', '')
+            
+            if text_station in valid_station_ids:
+                text_id = text_data['id']
             
             # Renderuj tylko przypisane teksty
             if text_id in assigned_text_ids:
@@ -503,6 +524,9 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
                 if segment_numbers:
                     # Wypisz wszystkie numery oddzielone spacjami
                     segments_info = f"({' '.join(f'#{num}' for num in segment_numbers)})"
+                    
+                    # INTERACTIVE SVG ZAWSZE POKAZUJE ORYGINALNY TEKST Z DXF
+                    # Formatowanie (output_format) jest tylko dla finalnego SVG
                     display_text = f"{text_data['id']} {segments_info}"
                     
                     text_element = dwg.text(
@@ -615,7 +639,8 @@ def generate_interactive_svg(inverter_data: Dict, texts: List, unassigned_texts:
             unassigned_texts_group.add(circle_element)
         
         # Format: ZIEB/F01/MPPT1/S01 (bez dodatkowego napisu - kolor już informuje)
-        display_text = f"{text_data['id']}"
+        # INTERACTIVE SVG ZAWSZE POKAZUJE ORYGINALNY TEKST Z DXF
+        display_text = text_data['id']
         
         unassigned_texts_group.add(dwg.text(
             display_text,

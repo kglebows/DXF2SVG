@@ -260,7 +260,7 @@ def extract_polylines_from_dxf(doc, layer_line, y_tolerance=0.01, segment_min_wi
     
     return polylines
 
-def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], station_id: str, search_radius: float = 6.0, text_location: str = "above", use_advanced_formatting: bool = False) -> List[Dict]:
+def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], station_id: str, search_radius: float = 6.0, text_location: str = "above", use_advanced_formatting: bool = False, valid_station_ids: set = None) -> List[Dict]:
     """Znajdź najbliższe teksty do każdej polilinii - automatyczne przypisywanie z uwzględnieniem TEXT_LOCATION"""
     console.processing("Rozpoczęcie automatycznego przypisywania na podstawie odległości")
     logger.info("Rozpoczęcie algorytmu automatycznego przypisywania tekstów do polilinii")
@@ -269,24 +269,38 @@ def find_closest_texts_to_polylines(texts: List[Dict], polylines: List[Dict], st
     used_texts = set()
     used_polylines = set()
     
-    # Przefiltruj teksty dla docelowej stacji
+    # NOWE: Użyj przekazanego zbioru station_ids lub fallback do pojedynczego
+    if valid_station_ids is None:
+        valid_station_ids = {station_id} if station_id else set()
+    
+    # Przefiltruj teksty dla docelowej stacji/stacji
     if use_advanced_formatting:
         # W zaawansowanym formatowaniu filtrujemy po zmiennej 'name' z variables
-        if station_id:
+        if valid_station_ids:
             station_texts = []
             for t in texts:
                 parsed = parse_text_to_dict(t['id'], station_id)
-                if parsed and parsed.get('variables', {}).get('name') == station_id:
-                    station_texts.append(t)
-            console.info(f"Tekstów dla stacji {station_id} (zaawansowane formatowanie)", len(station_texts))
+                if parsed:
+                    text_station = parsed.get('variables', {}).get('name', '')
+                    if text_station in valid_station_ids:
+                        # WAŻNE: Aktualizuj tekst o dane parsed (włącznie z output_format)
+                        t.update(parsed)
+                        station_texts.append(t)
+            console.info(f"Tekstów dla stacji {', '.join(valid_station_ids)} (zaawansowane formatowanie)", len(station_texts))
         else:
-            # Jeśli nie podano station_id, używamy wszystkich tekstów
+            # Jeśli nie podano station_ids, używamy wszystkich tekstów
             station_texts = texts
             console.info(f"Wszystkich tekstów (zaawansowane formatowanie, brak filtra)", len(station_texts))
     else:
         # W formatowaniu legacy filtrujemy po station_id
-        station_texts = [t for t in texts if parse_text_to_dict(t['id'], station_id) and parse_text_to_dict(t['id'], station_id).get('station') == station_id]
-        console.info(f"Tekstów dla stacji {station_id}", len(station_texts))
+        station_texts = []
+        for t in texts:
+            parsed = parse_text_to_dict(t['id'], station_id)
+            if parsed and parsed.get('station') in valid_station_ids:
+                # Aktualizuj tekst o dane parsed
+                t.update(parsed)
+                station_texts.append(t)
+        console.info(f"Tekstów dla stacji {', '.join(valid_station_ids)}", len(station_texts))
     logger.info(f"Używany parametr TEXT_LOCATION: {text_location}")
     logger.info(f"Używany parametr SEARCH_RADIUS: {search_radius}")
     
@@ -376,7 +390,9 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
             'Y_TOLERANCE': Y_TOLERANCE,
             'SEGMENT_MIN_WIDTH': SEGMENT_MIN_WIDTH,
             'SEARCH_RADIUS': SEARCH_RADIUS,
-            'TEXT_LOCATION': TEXT_LOCATION
+            'TEXT_LOCATION': TEXT_LOCATION,
+            'TEXT_FORMATS_LIST': globals().get('TEXT_FORMATS_LIST', []),
+            'USE_ADVANCED_FORMATTING': globals().get('USE_ADVANCED_FORMATTING', False)
         }
     
     try:
@@ -409,22 +425,58 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
     # Pobierz flagę zaawansowanego formatowania z parametrów lub użyj globalnej
     use_advanced_formatting = config_params.get('USE_ADVANCED_FORMATTING', False)
     
+    # WAŻNE: Jeśli TEXT_FORMATS_LIST nie jest w config_params, pobierz z globals (z config module)
+    if 'TEXT_FORMATS_LIST' not in config_params:
+        config_params['TEXT_FORMATS_LIST'] = globals().get('TEXT_FORMATS_LIST', [])
+    
+    # NOWE: Pobierz wszystkie station_id z formatowań (multi-format support)
+    valid_station_ids = set()
+    if use_advanced_formatting:
+        text_formats_list = config_params.get('TEXT_FORMATS_LIST', [])
+        logger.debug(f"use_advanced_formatting={use_advanced_formatting}, TEXT_FORMATS_LIST length={len(text_formats_list)}")
+        if text_formats_list:
+            for fmt in text_formats_list:
+                station_id_fmt = fmt.get('station_id', '')
+                logger.debug(f"Format '{fmt.get('name')}' ma station_id='{station_id_fmt}'")
+                if station_id_fmt:
+                    valid_station_ids.add(station_id_fmt)
+        else:
+            # Backward compatibility: użyj pojedynczego STATION_ID
+            logger.debug(f"TEXT_FORMATS_LIST jest pusta, używam STATION_ID={config_params['STATION_ID']}")
+            valid_station_ids.add(config_params['STATION_ID'])
+    else:
+        # Legacy: zawsze tylko jeden STATION_ID
+        logger.debug(f"use_advanced_formatting=False, używam STATION_ID={config_params['STATION_ID']}")
+        valid_station_ids.add(config_params['STATION_ID'])
+    
+    console.info(f"Filtrowanie tekstów dla stacji: {', '.join(valid_station_ids)}")
+    logger.debug(f"valid_station_ids set = {valid_station_ids}")
+    
     for text in all_texts:
         parsed = parse_text_to_dict(text['id'], config_params['STATION_ID'])
         if parsed:
             # W zaawansowanym formatowaniu filtrujemy po zmiennej 'name'
             if use_advanced_formatting:
-                # Filtruj po 'name' ze zmiennych zaawansowanego formatowania
-                if parsed.get('variables', {}).get('name') == config_params['STATION_ID']:
+                # Sprawdź czy 'name' z variables pasuje do któregokolwiek station_id
+                # WAŻNE: Jeśli parsed ma 'variables' (advanced parsing), użyj zmiennej 'name'
+                # W przeciwnym razie (legacy parsing fallback), użyj pola 'station'
+                if 'variables' in parsed:
+                    text_station = parsed.get('variables', {}).get('name', '')
+                else:
+                    # Fallback na legacy parsing - użyj pola 'station'
+                    text_station = parsed.get('station', '')
+                
+                logger.debug(f"advanced mode - text_station='{text_station}', in valid_station_ids={text_station in valid_station_ids}")
+                if text_station in valid_station_ids:
                     text.update(parsed)  # Dodaj sparsowane dane do tekstu
                     station_texts.append(text)
             else:
                 # W legacy formatowaniu filtrujemy po station
-                if parsed.get('station') == config_params['STATION_ID']:
+                if parsed.get('station') in valid_station_ids:
                     text.update(parsed)  # Dodaj sparsowane dane do tekstu
                     station_texts.append(text)
     
-    console.result(f"Tekstów dla stacji {config_params['STATION_ID']} znaleziono", len(station_texts))
+    console.result(f"Tekstów dla stacji {', '.join(valid_station_ids)} znaleziono", len(station_texts))
     
     # Automatyczne przypisywanie z parametrami z konfiguracji
     console.step("Faza 1: Automatyczne przypisywanie na podstawie odległości", "🤖")
@@ -432,7 +484,8 @@ def process_dxf(input_file: str, config_params: Dict = None) -> Tuple[Dict, List
                                                  config_params['STATION_ID'],
                                                  config_params['SEARCH_RADIUS'], 
                                                  config_params['TEXT_LOCATION'],
-                                                 use_advanced_formatting)
+                                                 use_advanced_formatting,
+                                                 valid_station_ids)
     
     # Buduj strukturę danych invertera
     inverter_data = defaultdict(lambda: defaultdict(list))

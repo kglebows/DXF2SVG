@@ -119,7 +119,30 @@ class ConfigManager:
             parser = configparser.ConfigParser()
             parser.read(config_path, encoding='utf-8')
             
+            # NOWE: Wczytaj formatowania tekstów z sekcji TEXT_FORMAT_X
+            text_formats_list = []
             for section_name in parser.sections():
+                if section_name.startswith('TEXT_FORMAT_'):
+                    # To jest sekcja formatowania
+                    fmt_dict = {
+                        'name': parser[section_name].get('name', ''),
+                        'station_id': parser[section_name].get('station_id', ''),
+                        'input_format': parser[section_name].get('input_format', ''),
+                        'output_format': parser[section_name].get('output_format', ''),
+                        'variables': self._convert_value(parser[section_name].get('variables', '{}'))
+                    }
+                    text_formats_list.append(fmt_dict)
+                    logger.debug(f"Załadowano formatowanie: {fmt_dict['name']}")
+            
+            if text_formats_list:
+                self.config_data['TEXT_FORMATS_LIST'] = text_formats_list
+                logger.info(f"Załadowano {len(text_formats_list)} formatowań tekstów")
+            
+            for section_name in parser.sections():
+                # Pomiń sekcje TEXT_FORMAT_X - już obsłużone powyżej
+                if section_name.startswith('TEXT_FORMAT_'):
+                    continue
+                    
                 for key, value in parser[section_name].items():
                     # Konwertuj wartości na odpowiednie typy
                     converted_value = self._convert_value(value)
@@ -232,6 +255,23 @@ class ConfigManager:
                 'advanced_additional_vars': additional_vars_json,
             }
             
+            # NOWE: Sekcja dla wielu formatowań tekstów (TEXT_FORMATS_LIST)
+            text_formats_list = self.config_data.get('TEXT_FORMATS_LIST', [])
+            if text_formats_list:
+                for idx, fmt in enumerate(text_formats_list):
+                    section_name = f'TEXT_FORMAT_{idx + 1}'
+                    # Escape % w zmiennych
+                    variables_json = json.dumps(fmt.get('variables', {}))
+                    variables_json = variables_json.replace('%', '%%')
+                    
+                    parser[section_name] = {
+                        'name': str(fmt.get('name', f'Format {idx + 1}')),
+                        'station_id': str(fmt.get('station_id', '')),
+                        'input_format': str(fmt.get('input_format', '')),
+                        'output_format': str(fmt.get('output_format', '')),
+                        'variables': variables_json,
+                    }
+            
             # Zapisz do pliku
             with open(config_path, 'w', encoding='utf-8') as configfile:
                 parser.write(configfile)
@@ -301,6 +341,11 @@ class ConfigManager:
             if hasattr(config, key):
                 setattr(config, key, value)
                 logger.debug(f"Zastosowano do config.{key} = {value}")
+        
+        # WAŻNE: Dodaj TEXT_FORMATS_LIST do modułu config aby było dostępne globalnie
+        if 'TEXT_FORMATS_LIST' in self.config_data:
+            setattr(config, 'TEXT_FORMATS_LIST', self.config_data['TEXT_FORMATS_LIST'])
+            logger.debug(f"Zastosowano do config.TEXT_FORMATS_LIST (formatowań: {len(self.config_data['TEXT_FORMATS_LIST'])})")
 
 
 class ConfigTab:

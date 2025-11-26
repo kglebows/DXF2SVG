@@ -192,42 +192,94 @@ def parse_text_to_dict(text: str, station_id: str = None) -> Dict:
         cleaned = clean_dxf_text(text)
         logger.debug(f"Tekst oryginalny: '{text}' -> po czyszczeniu: '{cleaned}'")
         
-        # SPRAWDŹ NAJPIERW ZAAWANSOWANE FORMATOWANIE
-        if globals().get('USE_ADVANCED_FORMATTING', False):
+        # SPRAWDŹ NAJPIERW ZAAWANSOWANE FORMATOWANIE (WIELE FORMATÓW)
+        # WAŻNE: Użyj zmiennej modułowej, nie globals()
+        if USE_ADVANCED_FORMATTING:
             logger.debug("Próbuję zaawansowane formatowanie...")
             
             from src.core.advanced_formatter import AdvancedFormatter
             
-            input_format = globals().get('ADVANCED_INPUT_FORMAT', '')
-            output_format = globals().get('ADVANCED_OUTPUT_FORMAT', '')
-            additional_vars = globals().get('ADVANCED_ADDITIONAL_VARS', {})
+            # Pobierz listę formatowań
+            text_formats_list = TEXT_FORMATS_LIST
             
-            if input_format and output_format:
-                formatter = AdvancedFormatter()
-                variables = formatter.parse_input_format(cleaned, input_format)
-                
-                if variables:
-                    logger.debug(f"Zaawansowane formatowanie rozpoznało: {variables}")
+            if text_formats_list:
+                # Próbuj każde formatowanie po kolei
+                for fmt_index, fmt_data in enumerate(text_formats_list):
+                    input_format = fmt_data.get('input_format', '')
+                    output_format = fmt_data.get('output_format', '')
+                    station_id_fmt = fmt_data.get('station_id', '')
+                    additional_vars = fmt_data.get('variables', {})
+                    format_name = fmt_data.get('name', f'Format {fmt_index + 1}')
                     
-                    # Utwórz standardowy dict format dla kompatybilności z resztą systemu
-                    # Mapuj zmienne zaawansowane na standardowe pola
-                    result = {
-                        'station': variables.get('name', variables.get('st', station_id or STATION_ID)),
-                        'station_id': variables.get('name', variables.get('st', station_id or STATION_ID)),
-                        'inverter': f"I{variables.get('inv', 0):02d}",
-                        'mppt': f"MPPT{variables.get('mppt', 0)}",
-                        'substring': f"STR{variables.get('str', variables.get('tr', 0))}",
-                        'original_text': text,
-                        'parsed_with': 'advanced_formatting',
-                        'variables': variables  # Zachowaj oryginalne zmienne
-                    }
-                    
-                    logger.debug(f"Zwracam standardowy format: {result}")
-                    return result
-                else:
-                    logger.debug(f"Zaawansowane formatowanie nie rozpoznało tekstu '{cleaned}' z formatem '{input_format}'")
+                    if input_format and output_format:
+                        formatter = AdvancedFormatter()
+                        variables = formatter.parse_input_format(cleaned, input_format)
+                        
+                        if variables:
+                            # Sprawdź czy name pasuje do station_id formatu
+                            if station_id_fmt and variables.get('name') != station_id_fmt:
+                                logger.debug(f"{format_name} odrzucił: name={variables.get('name')} != station_id={station_id_fmt}")
+                                continue  # Odrzuć ten format, próbuj następny
+                            
+                            logger.debug(f"Format '{format_name}' rozpoznał: {variables}")
+                            
+                            # Zastosuj dodatkowe zmienne obliczeniowe (jeśli są)
+                            if additional_vars:
+                                formatter.variables = variables
+                                for var_name, expression in additional_vars.items():
+                                    if expression and expression.strip():  # Tylko jeśli expression nie jest puste
+                                        # Oblicz wartość wyrazyżenia i zaktualizuj variables
+                                        result_value = formatter._evaluate_expression(expression, variables)
+                                        variables[var_name] = result_value
+                                        logger.debug(f"Obliczono {var_name} = {result_value} (z {expression})")
+                            
+                            # Utwórz standardowy dict format dla kompatybilności z resztą systemu
+                            result = {
+                                'station': variables.get('name', variables.get('st', station_id_fmt or station_id or STATION_ID)),
+                                'station_id': variables.get('name', variables.get('st', station_id_fmt or station_id or STATION_ID)),
+                                'inverter': f"I{variables.get('inv', 0):02d}",
+                                'mppt': f"MPPT{variables.get('mppt', 0)}",
+                                'substring': f"STR{variables.get('str', variables.get('tr', 0))}",
+                                'original_text': text,
+                                'parsed_with': 'advanced_formatting',
+                                'format_index': fmt_index,  # Zapisz index formatowania
+                                'format_name': format_name,  # Zapisz nazwę formatowania
+                                'output_format': output_format,  # Zapisz output format dla tego tekstuszczegółowe
+                                'variables': variables  # Zachowaj oryginalne zmienne
+                            }
+                            
+                            logger.debug(f"Zwracam standardowy format z '{format_name}': {result}")
+                            return result
+                        else:
+                            logger.debug(f"Format '{format_name}' nie rozpoznał tekstu '{cleaned}'")
             else:
-                logger.warning("Zaawansowane formatowanie włączone ale brak formatów input/output")
+                # BACKWARD COMPATIBILITY: Stary sposób (pojedyncze formatowanie)
+                input_format = ADVANCED_INPUT_FORMAT
+                output_format = ADVANCED_OUTPUT_FORMAT
+                additional_vars = ADVANCED_ADDITIONAL_VARS
+                
+                if input_format and output_format:
+                    formatter = AdvancedFormatter()
+                    variables = formatter.parse_input_format(cleaned, input_format)
+                    
+                    if variables:
+                        logger.debug(f"Zaawansowane formatowanie rozpoznało: {variables}")
+                        
+                        result = {
+                            'station': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                            'station_id': variables.get('name', variables.get('st', station_id or STATION_ID)),
+                            'inverter': f"I{variables.get('inv', 0):02d}",
+                            'mppt': f"MPPT{variables.get('mppt', 0)}",
+                            'substring': f"STR{variables.get('str', variables.get('tr', 0))}",
+                            'original_text': text,
+                            'parsed_with': 'advanced_formatting',
+                            'format_index': 0,
+                            'output_format': output_format,
+                            'variables': variables
+                        }
+                        
+                        logger.debug(f"Zwracam standardowy format: {result}")
+                        return result
         
         # LEGACY FORMATOWANIE (jeśli zaawansowane nie zadziałało)
         logger.debug("Próbuję legacy formatowanie...")
@@ -361,7 +413,7 @@ def get_svg_id(parsed: Dict) -> str:
     """Generuje SVG ID z sparsowanych danych zgodnie z aktualnym formatem ID"""
     try:
         # Sprawdź czy używamy zaawansowanego formatowania
-        if globals().get('USE_ADVANCED_FORMATTING', False):
+        if USE_ADVANCED_FORMATTING:
             return get_advanced_formatted_id(parsed)
         
         # Pobierz aktualny format ID z konfiguracji (legacy system)
@@ -397,64 +449,82 @@ def get_advanced_formatted_id(parsed: Dict) -> str:
     try:
         from src.core.advanced_formatter import AdvancedFormatter
         
+        # NOWE: Jeśli parsed zawiera output_format (z multi-format parsing), użyj go
+        # W przeciwnym razie użyj globalnego ADVANCED_OUTPUT_FORMAT (backward compatibility)
+        output_format = parsed.get('output_format', ADVANCED_OUTPUT_FORMAT)
+        
         # Pobierz konfigurację zaawansowanego formatowania
-        input_format = globals().get('ADVANCED_INPUT_FORMAT', '')
-        output_format = globals().get('ADVANCED_OUTPUT_FORMAT', '')
-        additional_vars = globals().get('ADVANCED_ADDITIONAL_VARS', {})
+        input_format = ADVANCED_INPUT_FORMAT
+        additional_vars = ADVANCED_ADDITIONAL_VARS
         
-        if not input_format or not output_format:
-            logger.warning("Brak skonfigurowanego zaawansowanego formatowania, używam legacy")
+        if not output_format:
+            logger.warning("Brak skonfigurowanego output_format, używam legacy")
             return get_legacy_formatted_id(parsed)
         
-        # NOWE: Użyj zaawansowanego formatera do parsowania input
-        # Jeśli parsed zawiera klucz 'original_text', użyj go do re-parsowania
-        original_text = parsed.get('original_text')
-        if not original_text:
-            # Fallback: spróbuj zrekonstruować original_text z parsed data
-            # To będzie działać dla przypadków gdzie legacy parser zadziałał
-            station = parsed.get('station', parsed.get('station_id', ''))
-            inverter_num = parsed.get('inverter', '').replace('I', '').lstrip('0')
+        # NOWE: Sprawdź czy parsed już zawiera zmienne (z parse_text_to_dict multi-format)
+        # To pozwala uniknąć ponownego parsowania
+        if 'variables' in parsed and parsed.get('variables'):
+            logger.debug(f"Używam już sparsowanych zmiennych: {parsed['variables']}")
+            variables = parsed['variables'].copy()  # Kopia aby nie modyfikować oryginalu
             
-            # Sprawdź czy mamy wszystkie potrzebne części do rekonstrukcji
-            if station and inverter_num:
-                # Spróbuj różnych formatów
-                possible_formats = [
-                    f"{station}/F{inverter_num.zfill(2)}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
-                    f"{station}/F{inverter_num}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
-                ]
+            # WAŻNE: Sprawdź czy trzeba zastosować dodatkowe zmienne obliczeniowe
+            # Jeśli parsed pochodzi z TEXT_FORMATS_LIST, additional_vars już zostały zastosowane w parse_text_to_dict
+            # Ale jeśli pochodzi z legacy path lub backward compatibility, zastosuj globalne additional_vars
+            if 'format_index' not in parsed and additional_vars:  # Legacy parsing - zastosuj globalne additional_vars
+                formatter = AdvancedFormatter()
+                formatter.variables = variables
+                for var_name, expression in additional_vars.items():
+                    if expression and expression.strip():
+                        result_value = formatter._evaluate_expression(expression, variables)
+                        variables[var_name] = result_value
+                        logger.debug(f"Zastosowano dodatkową zmienną {var_name} = {result_value}")
+        else:
+            # Musimy sparsować tekst - legacy path lub brak zmiennych
+            # Jeśli parsed zawiera klucz 'original_text', użyj go do parsowania
+            original_text = parsed.get('original_text')
+            if not original_text:
+                # Fallback: spróbuj zrekonstruować original_text z parsed data
+                # To będzie działać dla przypadków gdzie legacy parser zadziałał
+                station = parsed.get('station', parsed.get('station_id', ''))
+                inverter_num = parsed.get('inverter', '').replace('I', '').lstrip('0')
                 
-                for possible_text in possible_formats:
-                    if possible_text.count('/') >= 2:  # Minimum format check
-                        original_text = possible_text
-                        break
-        
-        if not original_text:
-            logger.warning(f"Nie można ustalić original_text z parsed: {parsed}")
-            return get_legacy_formatted_id(parsed)
-        
-        logger.debug(f"DEBUG: original_text = {original_text}")
-        logger.debug(f"DEBUG: input_format = {input_format}")
-        
-        # Użyj zaawansowanego formatera do parsowania
-        formatter = AdvancedFormatter()
-        variables = formatter.parse_input_format(original_text, input_format)
-        
-        if not variables:
-            logger.warning(f"Zaawansowany formatter nie może sparsować '{original_text}' z formatem '{input_format}'")
-            return get_legacy_formatted_id(parsed)
-        
-        logger.debug(f"DEBUG: formatter variables = {variables}")
+                # Sprawdź czy mamy wszystkie potrzebne części do rekonstrukcji
+                if station and inverter_num:
+                    # Spróbuj różnych formatów
+                    possible_formats = [
+                        f"{station}/F{inverter_num.zfill(2)}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
+                        f"{station}/F{inverter_num}/STR{parsed.get('substring', '').replace('S', '').replace('STR', '')}",
+                    ]
+                    
+                    for possible_text in possible_formats:
+                        if possible_text.count('/') >= 2:  # Minimum format check
+                            original_text = possible_text
+                            break
+            
+            if not original_text:
+                logger.warning(f"Nie można ustalić original_text z parsed: {parsed}")
+                return get_legacy_formatted_id(parsed)
+            
+            logger.debug(f"DEBUG: original_text = {original_text}")
+            logger.debug(f"DEBUG: input_format = {input_format}")
+            
+            # Użyj zaawansowanego formatera do parsowania
+            formatter = AdvancedFormatter()
+            variables = formatter.parse_input_format(original_text, input_format)
+            
+            if not variables:
+                logger.warning(f"Zaawansowany formatter nie może sparsować '{original_text}' z formatem '{input_format}'")
+                return get_legacy_formatted_id(parsed)
+            
+            logger.debug(f"DEBUG: formatter variables = {variables}")
         
         # Ustaw zmienne w formaterze
+        formatter = AdvancedFormatter()
         formatter.variables = variables
         
-        # Ustaw dodatkowe zmienne
-        for var_name, expression in additional_vars.items():
-            formatter.set_additional_variable(var_name, expression)
-        
-        # Wygeneruj output
+        # Wygeneruj output używając format-specific output_format
         result = formatter.format_output(output_format)
-        logger.debug(f"DEBUG: final result = {result}")
+        logger.debug(f"DEBUG: final SVG ID result = {result} (from output_format: {output_format})")
         
         return result
         

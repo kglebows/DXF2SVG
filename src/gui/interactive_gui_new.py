@@ -850,7 +850,9 @@ class InteractiveGUI:
             'TEXT_LOCATION': self.config_manager.get('TEXT_LOCATION', 'above'),
             'POLYLINE_PROCESSING_MODE': self.config_manager.get('POLYLINE_PROCESSING_MODE', 'individual_segments'),
             'SEGMENT_MERGE_GAP_TOLERANCE': float(self.config_manager.get('SEGMENT_MERGE_GAP_TOLERANCE', 1.0)),
-            'MAX_MERGE_DISTANCE': float(self.config_manager.get('MAX_MERGE_DISTANCE', 5.0))
+            'MAX_MERGE_DISTANCE': float(self.config_manager.get('MAX_MERGE_DISTANCE', 5.0)),
+            'USE_ADVANCED_FORMATTING': self.config_manager.get('USE_ADVANCED_FORMATTING', False),
+            'TEXT_FORMATS_LIST': self.config_manager.get('TEXT_FORMATS_LIST', [])
         }
 
     def convert_and_analyze(self):

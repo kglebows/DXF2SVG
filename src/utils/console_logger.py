@@ -85,6 +85,12 @@ class ConsoleLogger:
     def info(self, message: str, emoji: str = "ℹ️"):
         """Informacja"""
         print(f"{Colors.BRIGHT_CYAN}{emoji} {message}{Colors.RESET}")
+    
+    def debug(self, message: str):
+        """Debug - wypisz tylko jeśli DEBUG włączony"""
+        # Dla celów debugowania - można wyłączyć ustawiając self.debug_enabled = False
+        if getattr(self, 'debug_enabled', True):
+            print(f"{Colors.DIM}🔍 DEBUG: {message}{Colors.RESET}")
         
     def print(self, message: str, end: str = '\n'):
         """Zwykłe wypisywanie tekstu"""

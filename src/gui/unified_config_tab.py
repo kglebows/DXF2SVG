@@ -361,9 +361,10 @@ class UnifiedConfigTab(tk.Frame):
         self.field_vars: Dict[str, tk.Variable] = {}
         self.advanced_formula_vars: Dict[str, tk.StringVar] = {}
         
-        # Zmienne dla formatowania
-        self.input_format_var = tk.StringVar(value="{name}/F{inv:2}/STR{str:2}")
-        self.output_format_var = tk.StringVar(value="S{mppt:2}-{str:2}/{inv:2}")
+        # NOWA STRUKTURA: Lista formatowań (każde z własną konfiguracją)
+        self.text_formats = []  # Lista słowników z formatowaniami
+        self.format_frames = []  # Lista frame'ów GUI dla każdego formatowania
+        self.canvas_draw_functions = []  # Lista funkcji rysujących Canvas (dla odświeżania)
         
         # Zmienne dla plików
         self.dxf_file_var = tk.StringVar()
@@ -676,13 +677,111 @@ class UnifiedConfigTab(tk.Frame):
                                  "Utwórz nową konfigurację").pack(side=tk.LEFT, padx=3)
         
     def create_formatting_section(self):
-        """Sekcja formatowania Input/Output + {name} + Zmienne obliczeniowe (rozwijalne)"""
-        # Karta Bento Box
-        card = self.create_bento_card(self.scrollable_frame, "Formatowanie tekstów")
+        """Sekcja formatowania Input/Output z możliwością dodawania wielu formatów"""
+        # Główna karta Bento Box z przyciskiem "+"
+        header_frame = tk.Frame(self.scrollable_frame, bg=self.colors['layer1_bg'])
+        header_frame.pack(fill=tk.X, padx=10, pady=3)
+        
+        # Nagłówek z przyciskiem
+        title_row = tk.Frame(header_frame, bg=self.colors['layer1_bg'])
+        title_row.pack(fill=tk.X)
+        
+        title_label = tk.Label(title_row, text="🔤 Formatowania tekstów", 
+                              bg=self.colors['layer1_bg'],
+                              fg=self.colors['text'],
+                              font=('Segoe UI', 11, 'bold'))
+        title_label.pack(side=tk.LEFT)
+        
+        # Przycisk dodawania nowego formatowania
+        add_btn = self.create_round_button(title_row, "➕", self.add_text_format,
+                                           "Dodaj nowe formatowanie tekstów", transparent=True)
+        add_btn.pack(side=tk.LEFT, padx=10)
+        
+        # Kontener na formatowania (będzie trzymać wszystkie karty formatowań)
+        self.formats_container = tk.Frame(self.scrollable_frame, bg=self.colors['layer1_bg'])
+        self.formats_container.pack(fill=tk.X)
+        
+        # NIE dodawaj domyślnego formatu tutaj - będzie dodany przez load_config_to_fields()
+    
+    def add_text_format(self, is_initial=False):
+        """Dodaje nowe formatowanie tekstów"""
+        format_id = len(self.text_formats)
+        
+        # Utwórz nowy słownik dla tego formatowania
+        format_data = {
+            'id': format_id,
+            'name': tk.StringVar(value=f"Format {format_id + 1}"),
+            'station_id': tk.StringVar(value=""),
+            'input_format': tk.StringVar(value="{name}/F{inv:2}/STR{str:2}"),
+            'output_format': tk.StringVar(value="S{mppt:2}-{str:2}/{inv:2}"),
+            'variables': {
+                'st': tk.StringVar(value=""),
+                'tr': tk.StringVar(value=""),
+                'inv': tk.StringVar(value=""),
+                'mppt': tk.StringVar(value=""),
+                'str': tk.StringVar(value=""),
+                'sub': tk.StringVar(value="")
+            }
+        }
+        
+        self.text_formats.append(format_data)
+        
+        # Utwórz GUI dla tego formatowania
+        format_frame = self.create_single_format_card(format_data)
+        self.format_frames.append(format_frame)
+        
+        if not is_initial:
+            # Scroll do nowo dodanego elementu (jeśli main_canvas istnieje)
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.update_idletasks()
+                self.main_canvas.yview_moveto(1.0)
+    
+    def create_single_format_card(self, format_data):
+        """Tworzy kartę dla pojedynczego formatowania"""
+        format_id = format_data['id']
+        
+        # Karta Bento Box dla tego formatowania
+        card = self.create_bento_card(self.formats_container, title=None)  # Tytuł będzie w środku
+        
+        # Nagłówek z nazwą i przyciskiem usuwania
+        header_row = tk.Frame(card, bg=self.colors['card_bg'])
+        header_row.pack(fill=tk.X, pady=(0, 8))
+        
+        # Pole nazwy formatowania (edytowalne)
+        name_label = tk.Label(header_row, text="📝 Nazwa:", 
+                             bg=self.colors['card_bg'],
+                             fg=self.colors['text_dim'],
+                             font=('Segoe UI', 9))
+        name_label.pack(side=tk.LEFT, padx=(0, 5))
+        
+        name_entry = self.create_entry(header_row, format_data['name'], width=20)
+        name_entry.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Przycisk usuwania (tylko jeśli nie jest to jedyne formatowanie)
+        if len(self.text_formats) > 0:  # Zawsze pokazuj bo można dodać więcej
+            def remove_with_cleanup(fid=format_id, btn=None):
+                # Usuń tooltip jeśli istnieje
+                if hasattr(self, 'tooltip_label') and self.tooltip_label:
+                    try:
+                        self.tooltip_label.destroy()
+                        self.tooltip_label = None
+                    except:
+                        pass
+                self.remove_text_format(fid)
+            
+            delete_btn = tk.Button(header_row, text="🗑️", 
+                                  bg=self.colors['card_bg'],
+                                  fg='#ff6b6b',
+                                  font=('Segoe UI', 10),
+                                  relief=tk.FLAT,
+                                  cursor='hand2',
+                                  command=remove_with_cleanup)
+            delete_btn.pack(side=tk.RIGHT)
+            self.create_tooltip(delete_btn, "Usuń to formatowanie")
         
         # {name} - STATION_ID
         name_row = tk.Frame(card, bg=self.colors['card_bg'])
-        name_row.pack(fill=tk.X, pady=2)  # Zmniejszony padding
+        name_row.pack(fill=tk.X, pady=2)
         
         self.create_label(name_row, "{name}:", width=15).pack(side=tk.LEFT)
         
@@ -691,13 +790,11 @@ class UnifiedConfigTab(tk.Frame):
             "To pole definiuje wartość zmiennej {name} w formułach Input/Output.")
         name_info.pack(side=tk.LEFT, padx=(0, 5))
         
-        # Tworzy zmienną dla name
-        self.advanced_formula_vars['name'] = tk.StringVar()
-        self.create_entry(name_row, self.advanced_formula_vars['name'], width=40).pack(side=tk.LEFT, padx=(0, 5))
+        self.create_entry(name_row, format_data['station_id'], width=40).pack(side=tk.LEFT, padx=(0, 5))
         
         # Format Input
         input_row = tk.Frame(card, bg=self.colors['card_bg'])
-        input_row.pack(fill=tk.X, pady=2)  # Zmniejszony padding
+        input_row.pack(fill=tk.X, pady=2)
         
         self.create_label(input_row, "Format Input:", width=15).pack(side=tk.LEFT)
         
@@ -708,11 +805,11 @@ class UnifiedConfigTab(tk.Frame):
             "Przykład: {name}/F{inv:2}/MPPT{mppt:2}/S{str:2}")
         input_info.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.create_entry(input_row, self.input_format_var, width=40).pack(side=tk.LEFT, padx=(0, 5))
+        self.create_entry(input_row, format_data['input_format'], width=40).pack(side=tk.LEFT, padx=(0, 5))
         
         # Format Output
         output_row = tk.Frame(card, bg=self.colors['card_bg'])
-        output_row.pack(fill=tk.X, pady=2)  # Zmniejszony padding
+        output_row.pack(fill=tk.X, pady=2)
         
         self.create_label(output_row, "Format Output:", width=15).pack(side=tk.LEFT)
         
@@ -723,29 +820,114 @@ class UnifiedConfigTab(tk.Frame):
             "Przykład: S{mppt:2}-{str:2}/{inv:2}")
         output_info.pack(side=tk.LEFT, padx=(0, 5))
         
-        self.create_entry(output_row, self.output_format_var, width=40).pack(side=tk.LEFT, padx=(0, 5))
+        self.create_entry(output_row, format_data['output_format'], width=40).pack(side=tk.LEFT, padx=(0, 5))
         
         # Zmienne obliczeniowe - ROZWIJALNE
-        self.create_advanced_variables_collapsible(card)
+        self.create_advanced_variables_collapsible_for_format(card, format_data)
+        
+        return card
+    
+    def remove_text_format(self, format_id):
+        """Usuwa formatowanie o podanym ID"""
+        if len(self.text_formats) <= 1:
+            messagebox.showwarning("Nie można usunąć", 
+                                 "Musi pozostać przynajmniej jedno formatowanie!")
+            return
+        
+        # Znajdź index formatowania
+        index = next((i for i, fmt in enumerate(self.text_formats) if fmt['id'] == format_id), None)
+        
+        if index is not None:
+            # Usuń GUI
+            self.format_frames[index].master.master.destroy()  # Destroy całej karty (outer frame)
+            
+            # Usuń z list
+            del self.text_formats[index]
+            del self.format_frames[index]
+            
+            # WAŻNE: Wymusz przerysowanie wszystkich Canvas
+            self.after(50, self.refresh_all_canvases)
+    
+    def create_advanced_variables_collapsible_for_format(self, parent, format_data):
+        """Tworzy rozwijalną sekcję ze zmiennymi obliczeniowymi dla konkretnego formatowania"""
+        # Frame zawierający przycisk rozwijania i zawartość
+        collapsible_frame = tk.Frame(parent, bg=self.colors['card_bg'])
+        collapsible_frame.pack(fill=tk.X, pady=(8, 0))
+        
+        # Zmienna do śledzenia stanu (rozwinięte/zwinięte)
+        is_expanded = tk.BooleanVar(value=False)
+        
+        # Przycisk rozwijania
+        toggle_btn_frame = tk.Frame(collapsible_frame, bg=self.colors['card_bg'])
+        toggle_btn_frame.pack(fill=tk.X)
+        
+        arrow_label = tk.Label(toggle_btn_frame, text="▶", 
+                              bg=self.colors['card_bg'],
+                              fg=self.colors['text_dim'],
+                              font=('Segoe UI', 9))
+        arrow_label.pack(side=tk.LEFT)
+        
+        toggle_label = tk.Label(toggle_btn_frame, text="Zmienne obliczeniowe (opcjonalne)", 
+                               bg=self.colors['card_bg'],
+                               fg=self.colors['text_dim'],
+                               font=('Segoe UI', 9),
+                               cursor='hand2')
+        toggle_label.pack(side=tk.LEFT, padx=5)
+        
+        # Zawartość (początkowo ukryta)
+        content_frame = tk.Frame(collapsible_frame, bg=self.colors['card_bg'])
+        
+        # Funkcja przełączająca
+        def toggle_content():
+            if is_expanded.get():
+                content_frame.pack_forget()
+                arrow_label.config(text="▶")
+                is_expanded.set(False)
+            else:
+                content_frame.pack(fill=tk.X, pady=(5, 0))
+                arrow_label.config(text="▼")
+                is_expanded.set(True)
+        
+        toggle_btn_frame.bind('<Button-1>', lambda e: toggle_content())
+        toggle_label.bind('<Button-1>', lambda e: toggle_content())
+        arrow_label.bind('<Button-1>', lambda e: toggle_content())
+        
+        # Dodaj pola zmiennych
+        variables = [
+            ('st', 'Station Number'),
+            ('tr', 'Tracker'),
+            ('inv', 'Inverter'),
+            ('mppt', 'MPPT'),
+            ('str', 'String'),
+            ('sub', 'Substring')
+        ]
+        
+        for var_name, var_label in variables:
+            var_row = tk.Frame(content_frame, bg=self.colors['card_bg'])
+            var_row.pack(fill=tk.X, pady=1)
+            
+            self.create_label(var_row, f"{{{var_name}}}:", width=15).pack(side=tk.LEFT)
+            
+            tooltip = f"Zmienna {{{var_name}}} - {var_label}\nWartość do podstawienia w formułach Input/Output"
+            info = self.create_info_icon(var_row, tooltip)
+            info.pack(side=tk.LEFT, padx=(0, 5))
+            
+            self.create_entry(var_row, format_data['variables'][var_name], width=40).pack(side=tk.LEFT, padx=(0, 5))
     
     def create_bento_card(self, parent, title=None):
         """Tworzy kartę z prawdziwymi zaokrąglonymi rogami przez Canvas"""
         # Outer frame dla padding - zmniejszony padding
         outer = tk.Frame(parent, bg=self.colors['layer1_bg'])
-        outer.pack(fill=tk.X, padx=10, pady=3)  # Zmniejszony z 15 na 10
+        outer.pack(fill=tk.X, padx=10, pady=3)
         
-        # Canvas container
-        canvas_container = tk.Frame(outer, bg=self.colors['layer1_bg'])
-        canvas_container.pack(fill=tk.X)
-        
-        # Canvas dla zaokrąglonego tła (będzie resize po zawartości)
-        card_canvas = tk.Canvas(canvas_container, bg=self.colors['layer1_bg'],
+        # Canvas dla zaokrąglonego tła (tło przezroczyste jak outer, rysujemy layer2_bg z zaokrągleniem)
+        card_canvas = tk.Canvas(outer, bg=self.colors['layer1_bg'],
                                highlightthickness=0, borderwidth=0)
         card_canvas.pack(fill=tk.X)
         
         # Frame dla zawartości - zmniejszony padding
+        # WAŻNE: NIE używamy .pack() tutaj, tylko canvas.create_window()
         content = tk.Frame(card_canvas, bg=self.colors['layer2_bg'])
-        content.pack(fill=tk.X, padx=12, pady=8)  # Zmniejszony z 15,10 na 12,8
         
         if title:
             title_label = tk.Label(content, text=title, 
@@ -757,8 +939,20 @@ class UnifiedConfigTab(tk.Frame):
         # Funkcja do rysowania zaokrąglonego tła po update
         def draw_rounded_bg(event=None):
             content.update_idletasks()
-            width = content.winfo_reqwidth() + 24  # Zmniejszony padding z 30 na 24
-            height = content.winfo_reqheight() + 16  # Zmniejszony z 20 na 16
+            # Pobierz dokładną wielkość contentu
+            req_width = content.winfo_reqwidth()
+            req_height = content.winfo_reqheight()
+            
+            # Jeśli content jest pusty (0x0), nie rysuj nic
+            if req_width <= 1 or req_height <= 1:
+                card_canvas.configure(width=1, height=1)
+                return
+            
+            # Padding wokół contentu
+            padding_x = 12
+            padding_y = 8
+            width = req_width + (2 * padding_x)
+            height = req_height + (2 * padding_y)
             
             card_canvas.configure(width=width, height=height)
             card_canvas.delete('all')
@@ -768,12 +962,15 @@ class UnifiedConfigTab(tk.Frame):
                                    fill=self.colors['layer2_bg'],
                                    outline='', width=0)
             
-            # Umieść content na canvas - dostosuj do nowych wartości
-            card_canvas.create_window(12, 8, window=content, anchor='nw')  # 12,8 zamiast 15,10
+            # Umieść content na canvas z paddingiem
+            card_canvas.create_window(padding_x, padding_y, window=content, anchor='nw')
         
         # Bind do rysowania po załadowaniu
         content.bind('<Configure>', draw_rounded_bg)
         card_canvas.after(10, draw_rounded_bg)
+        
+        # Przechowaj funkcję rysującą dla późniejszego odświeżania
+        self.canvas_draw_functions.append(draw_rounded_bg)
         
         return content
     
@@ -843,12 +1040,13 @@ class UnifiedConfigTab(tk.Frame):
         self.create_tooltip(info, tooltip_text)
         return info
     
-    def create_round_button(self, parent, icon, command, tooltip_text):
+    def create_round_button(self, parent, icon, command, tooltip_text, transparent=False):
         """Tworzy okrągły przycisk z ikoną i tooltipem"""
         # Canvas dla okrągłego tła
         size = 32
+        bg_color = self.colors['layer1_bg'] if transparent else self.colors['layer2_bg']
         canvas = tk.Canvas(parent, width=size, height=size,
-                          bg=self.colors['layer2_bg'],
+                          bg=bg_color,
                           highlightthickness=0,
                           borderwidth=0)
         
@@ -1049,8 +1247,12 @@ class UnifiedConfigTab(tk.Frame):
             # Funkcja do rysowania zaokrąglonego tła
             def draw_rounded_bg(event=None):
                 content_frame.update_idletasks()
-                width = content_frame.winfo_reqwidth() + 24
-                height = content_frame.winfo_reqheight() + 16
+                req_width = content_frame.winfo_reqwidth()
+                req_height = content_frame.winfo_reqheight()
+                
+                # Minimalne wymiary jeśli content jest pusty
+                width = max(req_width + 24, 100)
+                height = max(req_height + 16, 40)
                 
                 card_canvas.configure(width=width, height=height)
                 card_canvas.delete('all')
@@ -1065,6 +1267,9 @@ class UnifiedConfigTab(tk.Frame):
             
             content_frame.bind('<Configure>', draw_rounded_bg)
             content_frame.after(50, draw_rounded_bg)
+            
+            # Przechowuj funkcję rysującą dla późniejszego odświeżania
+            self.canvas_draw_functions.append(draw_rounded_bg)
             
             def toggle_section():
                 if expanded_var.get():
@@ -1378,6 +1583,7 @@ class UnifiedConfigTab(tk.Frame):
             self.config_manager.save_config(config_name)
             messagebox.showinfo("Sukces", f"Zapisano konfigurację: {config_name}")
             self.status_label.config(text="Konfiguracja zapisana", foreground='green')
+                    
         except Exception as e:
             messagebox.showerror("Błąd", f"Nie udało się zapisać:\n{e}")
             
@@ -1464,11 +1670,24 @@ class UnifiedConfigTab(tk.Frame):
         
         def on_leave(event):
             if hasattr(widget, '_tooltip'):
-                widget._tooltip.destroy()
+                try:
+                    widget._tooltip.destroy()
+                except:
+                    pass
+                del widget._tooltip
+        
+        def on_click(event):
+            # Usuń tooltip przy kliknięciu
+            if hasattr(widget, '_tooltip'):
+                try:
+                    widget._tooltip.destroy()
+                except:
+                    pass
                 del widget._tooltip
         
         widget.bind('<Enter>', on_enter)
         widget.bind('<Leave>', on_leave)
+        widget.bind('<Button-1>', on_click, add='+')  # add='+' żeby nie nadpisać istniejącego handlera
             
     def choose_color(self, var: tk.StringVar):
         """Wybierz kolor z palety"""
@@ -1498,15 +1717,39 @@ class UnifiedConfigTab(tk.Frame):
             
     def load_config_to_fields(self):
         """Załaduj wartości z config_manager do pól"""
-        # Formatowanie
-        self.input_format_var.set(self.config_manager.get('ADVANCED_INPUT_FORMAT', ''))
-        self.output_format_var.set(self.config_manager.get('ADVANCED_OUTPUT_FORMAT', ''))
+        # Wczytaj listę formatowań
+        text_formats_data = self.config_manager.get('TEXT_FORMATS_LIST', [])
         
-        # Zaawansowane zmienne
-        adv_vars = self.config_manager.get('ADVANCED_ADDITIONAL_VARS', {})
-        self.advanced_formula_vars['name'].set(self.config_manager.get('STATION_ID', ''))
-        for var_name in ['st', 'tr', 'inv', 'mppt', 'str', 'sub']:
-            self.advanced_formula_vars[var_name].set(adv_vars.get(var_name, ''))
+        # Wyczyść obecne formatowania
+        for frame in self.format_frames:
+            frame.master.master.destroy()
+        self.text_formats.clear()
+        self.format_frames.clear()
+        self.canvas_draw_functions.clear()  # Wyczyść stare funkcje rysujące
+        
+        # Załaduj formatowania lub dodaj domyślne
+        if text_formats_data:
+            for fmt_data in text_formats_data:
+                format_dict = {
+                    'id': len(self.text_formats),
+                    'name': tk.StringVar(value=fmt_data.get('name', f"Format {len(self.text_formats) + 1}")),
+                    'station_id': tk.StringVar(value=fmt_data.get('station_id', '')),
+                    'input_format': tk.StringVar(value=fmt_data.get('input_format', '')),
+                    'output_format': tk.StringVar(value=fmt_data.get('output_format', '')),
+                    'variables': {
+                        var_name: tk.StringVar(value=fmt_data.get('variables', {}).get(var_name, ''))
+                        for var_name in ['st', 'tr', 'inv', 'mppt', 'str', 'sub']
+                    }
+                }
+                self.text_formats.append(format_dict)
+                format_frame = self.create_single_format_card(format_dict)
+                self.format_frames.append(format_frame)
+        else:
+            # Dodaj jedno domyślne formatowanie jeśli brak w config
+            self.add_text_format(is_initial=True)
+        
+        # WAŻNE: Wymusz przerysowanie wszystkich Canvas
+        self.after(100, self.refresh_all_canvases)
             
         # Wszystkie parametry
         for section_data in CONFIG_PARAMETERS.values():
@@ -1524,23 +1767,36 @@ class UnifiedConfigTab(tk.Frame):
         
     def save_fields_to_config(self):
         """Zapisz wartości z pól do config_manager"""
-        # Formatowanie (zawsze używamy zaawansowanego - już bez przełącznika)
-        self.config_manager.set('USE_ADVANCED_FORMATTING', True)
-        self.config_manager.set('ADVANCED_INPUT_FORMAT', self.input_format_var.get())
-        self.config_manager.set('ADVANCED_OUTPUT_FORMAT', self.output_format_var.get())
+        # Zapisz listę formatowań
+        text_formats_data = []
+        for fmt in self.text_formats:
+            fmt_dict = {
+                'name': fmt['name'].get(),
+                'station_id': fmt['station_id'].get(),
+                'input_format': fmt['input_format'].get(),
+                'output_format': fmt['output_format'].get(),
+                'variables': {
+                    var_name: fmt['variables'][var_name].get()
+                    for var_name in ['st', 'tr', 'inv', 'mppt', 'str', 'sub']
+                }
+            }
+            text_formats_data.append(fmt_dict)
         
-        # STATION_ID z pola 'name'
-        station_id = self.advanced_formula_vars['name'].get()
-        if station_id:
-            self.config_manager.set('STATION_ID', station_id)
+        self.config_manager.set('TEXT_FORMATS_LIST', text_formats_data)
         
-        # Zaawansowane zmienne
-        adv_vars = {}
-        for var_name in ['st', 'tr', 'inv', 'mppt', 'str', 'sub']:
-            val = self.advanced_formula_vars[var_name].get()
-            if val:
-                adv_vars[var_name] = val
-        self.config_manager.set('ADVANCED_ADDITIONAL_VARS', adv_vars)
+        # BACKWARD COMPATIBILITY: Zapisz pierwsze formatowanie jako domyślne (dla starego kodu)
+        if text_formats_data:
+            first_fmt = text_formats_data[0]
+            self.config_manager.set('USE_ADVANCED_FORMATTING', True)
+            self.config_manager.set('ADVANCED_INPUT_FORMAT', first_fmt['input_format'])
+            self.config_manager.set('ADVANCED_OUTPUT_FORMAT', first_fmt['output_format'])
+            self.config_manager.set('STATION_ID', first_fmt['station_id'])
+            # WAŻNE: Przekonwertuj zmienne z StringVar na dict dla zapisu
+            vars_dict = {}
+            for var_name in ['st', 'tr', 'inv', 'mppt', 'str', 'sub']:
+                var_value = first_fmt['variables'][var_name].get() if hasattr(first_fmt['variables'][var_name], 'get') else first_fmt['variables'][var_name]
+                vars_dict[var_name] = var_value
+            self.config_manager.set('ADVANCED_ADDITIONAL_VARS', vars_dict)
         
         # Wszystkie parametry
         for param_name, var in self.field_vars.items():
@@ -1670,6 +1926,34 @@ TOLERANCJE:
 • MAX_DISTANCE - max odległość dla auto-przypisania
 """
         messagebox.showinfo("Wymagania warstw DXF", info)
+    
+    def refresh_all_canvases(self):
+        """Wymusza przerysowanie wszystkich Canvas w kartach po zmianach"""
+        try:
+            # Wymuszenie przerysowania przez pack_forget/pack
+            for frame in self.format_frames:
+                if frame and frame.winfo_exists():
+                    outer = frame.master.master  # outer frame
+                    outer.pack_forget()
+                    outer.pack(fill=tk.X, padx=10, pady=3)
+            
+            # Pełna aktualizacja
+            self.formats_container.update_idletasks()
+            self.scrollable_frame.update_idletasks()
+            
+            # Wywołaj wszystkie zapisane funkcje rysujące
+            for draw_func in self.canvas_draw_functions:
+                try:
+                    draw_func()
+                except Exception as e:
+                    pass  # Ignoruj błędy dla usuniętych widgetów
+            
+            # Aktualizuj scroll region
+            if hasattr(self, 'main_canvas'):
+                self.main_canvas.update_idletasks()
+                self.main_canvas.configure(scrollregion=self.main_canvas.bbox('all'))
+        except Exception as e:
+            print(f"⚠️ Błąd odświeżania Canvas: {e}")
     
     def adjust_panel_width(self):
         """Dynamicznie dostosowuje szerokość panelu lewego do zawartości"""
