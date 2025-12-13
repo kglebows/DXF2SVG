@@ -6,13 +6,15 @@
 
 ---
 
-## 🚀 **Dla Użytkowników Windows - Szybki Start**
+## 🚀 **Szybki Start dla Wszystkich**
 
-> **❓ Nie wiesz co to VSC, Python czy Git? Nie ogarniasz programowania?**  
+> **❓ Nie wiesz co to VSC, Python czy Git? Nie ogarniasz programowania?**
 > **👉 [KLIKNIJ TUTAJ - Prosta Instrukcja Instalacji](INSTALACJA.md) 👈**
 >
-> Szczegółowa instrukcja krok po kroku jak zainstalować i uruchomić program w kilka minut!  
-> Po prostu sklonuj repozytorium, kliknij dwukrotnie `start_gui.bat` i gotowe! 🎉
+> Szczegółowa instrukcja krok po kroku jak zainstalować i uruchomić program w kilka minut!
+>
+> - **Windows**: Sklonuj repozytorium, kliknij dwukrotnie [start_gui.bat](start_gui.bat) i gotowe! 🎉
+> - **Linux/macOS**: Sklonuj repozytorium, uruchom `./start_gui.sh` i gotowe! 🎉
 
 ---
 
@@ -65,16 +67,27 @@ pip install -r requirements.txt
 
 ### Uruchomienie
 
-#### Tryb GUI (Zalecany)
+#### Metoda 1: Automatyczny skrypt (Zalecana)
+
+**Windows:**
+```bash
+start_gui.bat
+```
+
+**Linux/macOS:**
+```bash
+chmod +x start_gui.sh  # tylko przy pierwszym uruchomieniu
+./start_gui.sh
+```
+
+Skrypt automatycznie sprawdzi i zainstaluje wszystkie wymagane biblioteki.
+
+#### Metoda 2: Tryb GUI (Bezpośrednio)
 
 Uruchom interfejs graficzny:
 ```bash
-python run_interactive_gui.py
-```
-
-Lub użyj skryptu wsadowego na Windows:
-```bash
-start_gui.bat
+python run_interactive_gui.py  # Windows
+python3 run_interactive_gui.py # Linux/macOS
 ```
 
 #### Tryb Linii Poleceń

@@ -79,38 +79,39 @@ class InteractiveGUI:
             pass
         
         # Dla Windows 10/11 - ciemny pasek tytułowy i zaokrąglone rogi
-        try:
-            import ctypes
-            DWMWA_USE_IMMERSIVE_DARK_MODE = 20
-            DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
-            DWMWA_WINDOW_CORNER_PREFERENCE = 33  # Windows 11
-            DWMWCP_ROUND = 2  # Zaokrąglone rogi
-            
-            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            
-            # Ciemny pasek tytułowy
-            value = ctypes.c_int(1)  # TRUE
+        if sys.platform.startswith('win'):
             try:
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                    ctypes.byref(value), ctypes.sizeof(value))
-            except:
-                # Fallback dla starszych wersji Windows 10
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
-                    ctypes.byref(value), ctypes.sizeof(value))
-            
-            # Zaokrąglone rogi (Windows 11)
-            try:
-                corner_value = ctypes.c_int(DWMWCP_ROUND)
-                ctypes.windll.dwmapi.DwmSetWindowAttribute(
-                    hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
-                    ctypes.byref(corner_value), ctypes.sizeof(corner_value))
-            except:
-                pass  # Windows 10 nie wspiera zaokrąglonych rogów
-                
-        except Exception as e:
-            print(f"Nie udało się ustawić stylu okna: {e}")
+                import ctypes
+                DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+                DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1 = 19
+                DWMWA_WINDOW_CORNER_PREFERENCE = 33  # Windows 11
+                DWMWCP_ROUND = 2  # Zaokrąglone rogi
+
+                hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+
+                # Ciemny pasek tytułowy
+                value = ctypes.c_int(1)  # TRUE
+                try:
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        ctypes.byref(value), ctypes.sizeof(value))
+                except:
+                    # Fallback dla starszych wersji Windows 10
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                        ctypes.byref(value), ctypes.sizeof(value))
+
+                # Zaokrąglone rogi (Windows 11)
+                try:
+                    corner_value = ctypes.c_int(DWMWCP_ROUND)
+                    ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                        hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                        ctypes.byref(corner_value), ctypes.sizeof(corner_value))
+                except:
+                    pass  # Windows 10 nie wspiera zaokrąglonych rogów
+
+            except Exception as e:
+                print(f"Nie udało się ustawić stylu okna: {e}")
         
         self.setup_styles()
         
@@ -189,6 +190,9 @@ class InteractiveGUI:
     
     def apply_dark_title_bar(self):
         """Ustaw ciemny title bar dla Windows 11"""
+        if not sys.platform.startswith('win'):
+            return
+
         try:
             import ctypes as ct
             self.root.update()
@@ -197,7 +201,7 @@ class InteractiveGUI:
             get_parent = ct.windll.user32.GetParent
             hwnd = get_parent(self.root.winfo_id())
             value = ct.c_int(2)  # 2 = dark mode, 1 = light mode
-            set_window_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 
+            set_window_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE,
                                ct.byref(value), ct.sizeof(value))
         except Exception as e:
             # Jeśli nie działa (np. Windows 10), po prostu ignoruj
