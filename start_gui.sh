@@ -17,6 +17,15 @@ echo "   DXF2SVG - Interaktywny Konwerter"
 echo "========================================"
 echo ""
 
+# Sprawdź czy skrypt nie jest uruchamiany jako root
+if [ "$EUID" -eq 0 ]; then
+    echo -e "${YELLOW}⚠️  UWAGA: Nie uruchamiaj tego skryptu z sudo!${NC}"
+    echo -e "${YELLOW}   Uruchom jako zwykły użytkownik: ./start_gui.sh${NC}"
+    echo ""
+    echo -e "${YELLOW}   Pakiety zostaną zainstalowane w trybie użytkownika.${NC}"
+    echo ""
+fi
+
 # Przejdź do folderu skryptu
 cd "$(dirname "$0")"
 export PYTHONIOENCODING=utf-8
@@ -123,11 +132,21 @@ check_and_install() {
     else
         echo ""
         echo "📦 Instaluję $package_name..."
-        if python3 -m pip install "$package_name$version_spec" --quiet --user; then
+        # Próbuj z --user, jeśli nie działa, użyj --break-system-packages
+        if python3 -m pip install "$package_name$version_spec" --user --quiet 2>/dev/null; then
             echo -e "${GREEN}✅ $package_name zainstalowane${NC}"
+        elif python3 -m pip install "$package_name$version_spec" --break-system-packages --quiet 2>/dev/null; then
+            echo -e "${GREEN}✅ $package_name zainstalowane (system-wide)${NC}"
         else
             echo -e "${RED}❌ Nie udało się zainstalować $package_name${NC}"
-            exit 1
+            echo -e "${YELLOW}Próbuję alternatywną metodę...${NC}"
+            # Ostatnia szansa - bez --quiet żeby zobaczyć błąd
+            if python3 -m pip install "$package_name$version_spec" --user; then
+                echo -e "${GREEN}✅ $package_name zainstalowane${NC}"
+            else
+                echo -e "${RED}❌ Instalacja nie powiodła się${NC}"
+                exit 1
+            fi
         fi
     fi
 }
