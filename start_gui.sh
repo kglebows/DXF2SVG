@@ -33,7 +33,7 @@ export PYTHONIOENCODING=utf-8
 # ============================================
 # KROK 1: Sprawdź czy Python jest zainstalowany
 # ============================================
-echo "[1/5] Sprawdzanie Pythona..."
+echo "[1/6] Sprawdzanie Pythona..."
 
 if ! command -v python3 &> /dev/null; then
     echo ""
@@ -68,7 +68,7 @@ fi
 # ============================================
 # KROK 2: Sprawdź czy pip działa
 # ============================================
-echo "[2/5] Sprawdzanie pip..."
+echo "[2/6] Sprawdzanie pip..."
 
 if ! python3 -m pip --version &> /dev/null; then
     echo ""
@@ -89,7 +89,7 @@ echo -e "${GREEN}✅ pip jest gotowy${NC}"
 # ============================================
 # KROK 3: Sprawdź tkinter (wymagany dla GUI)
 # ============================================
-echo "[3/5] Sprawdzanie tkinter..."
+echo "[3/6] Sprawdzanie tkinter..."
 
 if ! python3 -c "import tkinter" &> /dev/null; then
     echo ""
@@ -117,9 +117,72 @@ fi
 echo -e "${GREEN}✅ tkinter jest dostępny${NC}"
 
 # ============================================
+# KROK 3.5: Sprawdź czcionki emoji (tylko Linux)
+# ============================================
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "[3.5/5] Sprawdzanie czcionek emoji..."
+
+    # Sprawdź czy Noto Color Emoji jest zainstalowana
+    if ! fc-list | grep -qi "Noto Color Emoji"; then
+        echo ""
+        echo -e "${YELLOW}⚠️  Czcionka emoji nie jest zainstalowana${NC}"
+        echo "   Bez niej ikony w GUI mogą być niewidoczne."
+        echo ""
+
+        # Sprawdź czy mamy sudo dostęp
+        if command -v sudo &> /dev/null; then
+            echo "📥 Instaluję czcionkę emoji..."
+
+            # Wykryj dystrybucję
+            if command -v apt &> /dev/null; then
+                # Ubuntu/Debian
+                if sudo apt install -y fonts-noto-color-emoji 2>/dev/null; then
+                    echo -e "${GREEN}✅ Czcionka emoji zainstalowana${NC}"
+                    # Odśwież cache czcionek
+                    fc-cache -f -v >/dev/null 2>&1
+                else
+                    echo -e "${YELLOW}⚠️  Nie udało się zainstalować czcionki automatycznie${NC}"
+                    echo "   Uruchom ręcznie: sudo apt install fonts-noto-color-emoji"
+                fi
+            elif command -v dnf &> /dev/null; then
+                # Fedora/RHEL
+                if sudo dnf install -y google-noto-emoji-color-fonts 2>/dev/null; then
+                    echo -e "${GREEN}✅ Czcionka emoji zainstalowana${NC}"
+                    fc-cache -f -v >/dev/null 2>&1
+                else
+                    echo -e "${YELLOW}⚠️  Nie udało się zainstalować czcionki automatycznie${NC}"
+                    echo "   Uruchom ręcznie: sudo dnf install google-noto-emoji-color-fonts"
+                fi
+            elif command -v pacman &> /dev/null; then
+                # Arch Linux
+                if sudo pacman -S --noconfirm noto-fonts-emoji 2>/dev/null; then
+                    echo -e "${GREEN}✅ Czcionka emoji zainstalowana${NC}"
+                    fc-cache -f -v >/dev/null 2>&1
+                else
+                    echo -e "${YELLOW}⚠️  Nie udało się zainstalować czcionki automatycznie${NC}"
+                    echo "   Uruchom ręcznie: sudo pacman -S noto-fonts-emoji"
+                fi
+            else
+                echo -e "${YELLOW}⚠️  Nie rozpoznano menedżera pakietów${NC}"
+                echo "   Zainstaluj ręcznie czcionkę emoji dla swojej dystrybucji"
+            fi
+        else
+            echo -e "${YELLOW}⚠️  sudo nie jest dostępne${NC}"
+            echo "   Zainstaluj ręcznie czcionkę emoji:"
+            echo "   Ubuntu/Debian: sudo apt install fonts-noto-color-emoji"
+            echo "   Fedora/RHEL: sudo dnf install google-noto-emoji-color-fonts"
+            echo "   Arch: sudo pacman -S noto-fonts-emoji"
+        fi
+        echo ""
+    else
+        echo -e "${GREEN}✅ Czcionka emoji jest zainstalowana${NC}"
+    fi
+fi
+
+# ============================================
 # KROK 4: Zainstaluj wymagane biblioteki
 # ============================================
-echo "[4/5] Sprawdzanie wymaganych bibliotek..."
+echo "[4/6] Sprawdzanie wymaganych bibliotek..."
 
 # Funkcja do sprawdzania i instalacji pakietu
 check_and_install() {
@@ -160,7 +223,7 @@ check_and_install "scipy" "scipy" ">=1.10.0"
 # ============================================
 # KROK 5: Uruchom aplikację
 # ============================================
-echo "[5/5] Uruchamianie GUI..."
+echo "[6/6] Uruchamianie GUI..."
 echo ""
 echo "========================================"
 echo "   Aplikacja startuje..."
