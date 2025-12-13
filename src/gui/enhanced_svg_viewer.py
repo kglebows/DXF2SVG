@@ -11,6 +11,7 @@ Features:
 import tkinter as tk
 from tkinter import ttk
 import os
+import sys
 import xml.etree.ElementTree as ET
 import math
 from typing import Optional, Tuple, List, Callable, Dict, Any
@@ -21,6 +22,45 @@ from typing import Optional, Tuple, List, Callable, Dict, Any
 CORNER_RADIUS = 32          # Promień zaokrągleń dla wszystkich elementów
 LAYER_SPACING = 0           # Odstęp między warstwami
 ELEMENT_SPACING = 16        # Odstęp content od krawędzi (połowa CORNER_RADIUS)
+# ============================================================================
+
+# ============================================================================
+# CZCIONKI ZALEŻNE OD PLATFORMY
+# ============================================================================
+def get_default_font(size=10, weight='normal'):
+    """Zwraca najlepszą czcionkę dla bieżącej platformy"""
+    if sys.platform.startswith('win'):
+        family = 'Segoe UI'
+    elif sys.platform.startswith('darwin'):
+        family = 'SF Pro Text'
+    else:  # Linux
+        family = 'DejaVu Sans'
+
+    if weight == 'bold':
+        return (family, size, 'bold')
+    elif weight == 'italic':
+        return (family, size, 'italic')
+    else:
+        return (family, size)
+
+def get_emoji_font(size=16):
+    """Zwraca najlepszą czcionkę dla emoji na bieżącej platformie"""
+    if sys.platform.startswith('win'):
+        return ('Segoe UI Emoji', size)
+    elif sys.platform.startswith('darwin'):
+        return ('Apple Color Emoji', size)
+    else:  # Linux
+        # Próbuj różne czcionki emoji dostępne na Linuxie
+        return ('Noto Color Emoji', size)
+
+def get_monospace_font(size=9):
+    """Zwraca czcionkę monospace dla bieżącej platformy"""
+    if sys.platform.startswith('win'):
+        return ('Consolas', size)
+    elif sys.platform.startswith('darwin'):
+        return ('Monaco', size)
+    else:  # Linux
+        return ('DejaVu Sans Mono', size)
 # ============================================================================
 
 
@@ -267,12 +307,12 @@ class EnhancedSVGViewer:
                 tooltip.wm_overrideredirect(True)
                 tooltip.wm_geometry(f"+{x}+{y}")
                 
-                label = tk.Label(tooltip, text=text, 
-                               bg=colors['layer3_bg'], 
+                label = tk.Label(tooltip, text=text,
+                               bg=colors['layer3_bg'],
                                fg=colors['text'],
-                               relief=tk.SOLID, 
+                               relief=tk.SOLID,
                                borderwidth=1,
-                               font=('Segoe UI', 9),
+                               font=get_default_font(9),
                                padx=5, pady=3)
                 label.pack()
             
@@ -307,7 +347,7 @@ class EnhancedSVGViewer:
             # Ikona - dla emoji używaj anchor='center' zamiast pozycji tekstowej
             icon_id = btn_canvas.create_text(20, 20, text=icon,
                                             fill=colors['text'],
-                                            font=('Segoe UI', 16),
+                                            font=get_emoji_font(16),
                                             anchor='center')
             
             # Przechowuj elementy dla update
@@ -369,7 +409,7 @@ class EnhancedSVGViewer:
         self.zoom_label = tk.Label(toolbar_inner, text="100%",
                                    bg=colors['background'],
                                    fg=colors['text'],
-                                   font=('Segoe UI', 10))
+                                   font=get_default_font(10))
         self.zoom_label.pack(side=tk.LEFT, padx=10)
         
         # Separator
@@ -405,14 +445,14 @@ class EnhancedSVGViewer:
                                          text="Kliknij tekst i linię",
                                          bg=colors['background'],
                                          fg=colors['text'],
-                                         font=('Segoe UI', 9, 'italic'))
+                                         font=get_default_font(9, 'italic'))
         self.instruction_label.pack(side=tk.RIGHT, padx=10)
         
         # Selection info na końcu (prawy róg) - transparent bg
         self.selection_label = tk.Label(toolbar_inner, text="",
                                         bg=colors['background'],
                                         fg=colors['text'],
-                                        font=('Segoe UI', 9))
+                                        font=get_default_font(9))
         self.selection_label.pack(side=tk.RIGHT, padx=10)
         
     def setup_event_bindings(self):
@@ -1168,7 +1208,7 @@ class EnhancedSVGViewer:
             # Ciemny styl tooltipa
             label = tk.Label(self.hover_tooltip, text=tooltip_text,
                            background='#2d2d2d', foreground='#e0e0e0',
-                           font=('Consolas', 9),
+                           font=get_monospace_font(9),
                            relief=tk.SOLID, borderwidth=1,
                            padx=8, pady=6,
                            justify=tk.LEFT)
